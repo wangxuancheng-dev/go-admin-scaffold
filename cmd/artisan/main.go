@@ -36,7 +36,6 @@ func main() {
 
 	// Register built-in commands
 	manager.Register(commands.NewMakeCommand())
-	manager.Register(commands.NewHelloWorldCommand())
 	manager.Register(commands.NewMigrateCommand())
 	manager.Register(commands.NewSeedCommand())
 

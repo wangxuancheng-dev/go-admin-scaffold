@@ -43,10 +43,8 @@ func main() {
 	redisLocker := locker.NewRedisLocker(redis.GetClient())
 
 	manager := console.NewManager()
-	manager.Register(commands.NewHelloWorldCommand())
 	manager.Register(commands.NewMigrateCommand())
 	manager.Register(commands.NewSeedCommand())
-	manager.Register(commands.NewSendEmailsCommand())
 	manager.Register(commands.NewMakeCommand())
 
 	scheduler := schedule.NewScheduler(manager, redisLocker)

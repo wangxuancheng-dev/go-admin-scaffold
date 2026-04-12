@@ -17,12 +17,9 @@ func NewKernel(scheduler *Scheduler) *Kernel {
 	}
 }
 
-// Schedule defines scheduled tasks
+// Schedule defines scheduled tasks (register with k.scheduler.Command(...).Cron("...").Register() etc.)
 func (k *Kernel) Schedule() {
-	// Add a test task that runs every minute
-	k.scheduler.Command("hello:world").EveryMinute().Register()
-
-	log.Println("Scheduled tasks initialized")
+	log.Println("Scheduled tasks initialized (none registered by default)")
 }
 
 // Start starts the scheduler

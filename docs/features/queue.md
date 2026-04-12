@@ -1,6 +1,6 @@
 # 队列系统
 
-本文档说明 Go Admin Scaffold 的异步队列：基于 **Redis** 与 **[Asynq](https://github.com/hibiken/asynq)**，用于邮件、文件处理、数据同步等后台任务。
+本文档说明 Go Admin Scaffold 的异步队列：基于 **Redis** 与 **[Asynq](https://github.com/hibiken/asynq)**，用于耗时逻辑、通知、文件处理、数据同步等后台任务。
 
 ## 系统概述
 

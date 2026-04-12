@@ -47,29 +47,33 @@ go run cmd/artisan/main.go config:cache
 ### 1. 基本命令结构
 
 ```go
-// internal/commands/hello_world.go
+// internal/commands/ping_command.go
 package commands
 
 import (
     "context"
+    "time"
+
     "app/pkg/console"
 )
 
-type HelloWorldCommand struct {
-    *console.BaseCommand
+type PingCommand struct {
+    console.BaseCommand
 }
 
-func NewHelloWorldCommand() *HelloWorldCommand {
-    return &HelloWorldCommand{
-        BaseCommand: console.NewCommand(
-            "hello:world",
-            "Print hello world message",
-        ),
-    }
+func NewPingCommand() *PingCommand {
+    return &PingCommand{}
 }
 
-func (c *HelloWorldCommand) Handle(ctx context.Context) error {
-    console.Info("Hello World!")
+func (c *PingCommand) Configure(config *console.CommandConfig) {
+    config.Name = "app:ping"
+    config.Description = "Print a timestamp"
+    config.Usage = "app:ping"
+    c.BaseCommand.Configure(config)
+}
+
+func (c *PingCommand) Handle(ctx context.Context) error {
+    c.Line("pong at %s", time.Now().Format(time.RFC3339))
     return nil
 }
 ```
@@ -139,7 +143,7 @@ func main() {
     manager.Register(commands.NewSeedCommand())
     
     // 注册自定义命令
-    manager.Register(commands.NewHelloWorldCommand())
+    manager.Register(commands.NewPingCommand())
     manager.Register(commands.NewGreetCommand())
 
     if err := manager.RunFromArgs(); err != nil {
@@ -330,18 +334,12 @@ func (c *ListUsersCommand) Handle(ctx context.Context) error {
 ## 测试命令
 
 ```go
-// tests/commands/hello_world_test.go
-func TestHelloWorldCommand(t *testing.T) {
-    cmd := commands.NewHelloWorldCommand()
-    
-    // 捕获输出
-    output := &bytes.Buffer{}
-    console.SetOutput(output)
-    
-    // 执行命令
+// tests/commands/ping_command_test.go
+func TestPingCommand(t *testing.T) {
+    cmd := commands.NewPingCommand()
+
     err := cmd.Handle(context.Background())
-    
+
     assert.NoError(t, err)
-    assert.Contains(t, output.String(), "Hello World!")
 }
 ``` 

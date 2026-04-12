@@ -25,7 +25,6 @@
 │   ├── api/              # API 文档
 │   ├── features/         # 功能文档
 │   └── getting-started/  # 入门文档
-├── examples/              # 示例代码
 ├── internal/              # 内部代码
 │   ├── api/              # API 实现
 │   ├── bootstrap/        # 应用启动
@@ -214,112 +213,18 @@
 - 图片文件
 - 文档文件
 
-## 开发规范
+## 扩展开发（路径以本仓库为准）
 
-### 1. 代码组织
+1. **业务**：模型在 `internal/core/models`，仓储在 `internal/core/repositories`，服务在 `internal/core/services`，HTTP 在 `internal/api/admin/v1` 等，路由集中在 `internal/routes/router.go`。
+2. **中间件**：`internal/api/admin/middleware`（或 `internal/core/middleware`），在 `router.go` 中挂载。
+3. **命令**：实现放在 `internal/commands`，在 `cmd/server/main.go`（随服务跑的调度相关）或 `cmd/artisan/main.go` / `cmd/tools/main.go` 中注册。
+4. **可复用库**：放在 `pkg/`。
 
-- 遵循 Go 项目标准布局
-- 使用清晰的目录结构
-- 保持模块独立性
-- 避免循环依赖
-
-### 2. 命名规范
-
-- 使用有意义的名称
-- 遵循 Go 命名惯例
-- 保持命名一致性
-- 避免缩写（除非通用）
-
-### 3. 文件组织
-
-- 相关代码放在同一目录
-- 使用适当的文件分割
-- 保持文件大小合理
-- 遵循单一职责原则
-
-### 4. 包管理
-
-- 使用 Go Modules
-- 明确依赖版本
-- 定期更新依赖
-- 检查安全漏洞
-
-### 5. 文档规范
-
-- 编写清晰的注释
-- 保持文档更新
-- 使用 Markdown 格式
-- 包含代码示例
-
-## 最佳实践
-
-### 1. 代码结构
-
-- 使用接口定义行为
-- 实现依赖注入
-- 保持代码简洁
-- 遵循 SOLID 原则
-
-### 2. 错误处理
-
-- 使用自定义错误
-- 合理包装错误
-- 提供错误上下文
-- 记录错误日志
-
-### 3. 配置管理
-
-- 使用环境变量
-- 支持多环境
-- 敏感信息加密
-- 配置验证
-
-### 4. 日志管理
-
-- 分级日志
-- 结构化日志
-- 日志轮转
-- 错误追踪
-
-### 5. 测试规范
-
-- 单元测试
-- 集成测试
-- 测试覆盖率
-- 性能测试
-
-## 扩展开发
-
-### 1. 添加新功能
-
-1. 在 `internal/core/services` 中创建服务
-2. 在 `internal/models` 中定义模型
-3. 在 `internal/routes` 中添加路由
-4. 在 `pkg` 中添加工具函数
-
-### 2. 添加新中间件
-
-1. 在 `internal/middleware` 中创建中间件
-2. 在 `internal/routes` 中注册中间件
-3. 在配置文件中添加相关配置
-
-### 3. 添加新命令
-
-1. 在 `pkg/console/commands` 中创建命令
-2. 在 `cmd/tools/main.go` 中注册命令
-3. 添加命令文档
-
-### 4. 添加新驱动
-
-1. 在 `pkg` 中创建驱动接口
-2. 实现具体驱动
-3. 在配置文件中添加驱动配置
-4. 更新相关文档
+通用编码习惯、调试方式见 [开发说明](../advanced/development.md)；测试见 [测试指南](../advanced/testing.md)。
 
 ## 相关文档
 
+- [文档索引](../README.md)
 - [快速开始](quick-start.md)
 - [配置说明](configuration.md)
-- [开发环境配置](../advanced/development.md)
-- [测试指南](../advanced/testing.md)
 - [部署指南](../deployment/README.md) 
