@@ -176,17 +176,17 @@ go run cmd/tools/main.go migrate refresh
 ### 队列管理
 
 ```bash
-# 启动队列服务
-./queue-cmd.exe -start
+# 启动 Asynq 消费端（与 go run ./cmd/worker 二选一，勿重复消费）
+go run ./cmd/queue -start
 
-# 停止队列服务
-./queue-cmd.exe -stop
+# 或独立 worker
+go run ./cmd/worker
 
-# 查看队列状态
-./queue-status.exe -all
+# 查看队列任务规模（Asynq 各状态合计）
+go run ./cmd/queue-status -all
 
 # 清空指定队列
-./queue-cmd.exe -clear -queue=default
+go run ./cmd/queue -clear -queue=default
 ```
 
 ### 开发工具

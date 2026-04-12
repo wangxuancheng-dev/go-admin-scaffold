@@ -7,18 +7,12 @@
 ```yaml
 redis:
   host: "localhost"
-  port: 6379
+  port: "6379"
   password: ""
   db: 0
-
-queue:
-  driver: "redis"  # redis, memory
-  options:
-    host: "localhost"
-    port: 6379
-    password: ""
-    db: 1
 ```
+
+异步队列（Asynq）使用同一 Redis 实例时：**`queue.connection.redis`** 可写完整 URL；否则用 **`redis.host` / `port` / `password`**，库号由 **`queue.connection.db`** 指定（可省略，则同 **`redis.db`**），见 [配置说明](../getting-started/configuration.md) 与 [队列系统](queue.md)。
 
 ## 创建任务
 

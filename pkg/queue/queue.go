@@ -27,6 +27,8 @@ var (
 	ErrInvalidPayload = errors.New("invalid job payload")
 	// ErrDuplicateJob 唯一任务已存在（相同队列 + unique key 尚在等待或执行中）
 	ErrDuplicateJob = errors.New("duplicate job: unique key already queued or processing")
+	// ErrPullNotSupported 当前驱动不支持 Pop / Delete / Release（Asynq 请使用 Server 消费）
+	ErrPullNotSupported = errors.New("queue: Pop/Delete/Release not supported for this driver; use asynq.Server")
 )
 
 // NormalizeUniqueKey trims whitespace; empty string disables unique-queue deduplication.
@@ -79,6 +81,8 @@ type JobInterface interface {
 	SetReservedAt(t *time.Time)
 	// GetUniqueKey 非空时在同一队列内去重（Laravel ShouldBeUnique 风格）；空字符串表示不去重
 	GetUniqueKey() string
+	// TaskType Asynq 任务类型，与 JSON 字段 job_type 一致；空则入队时由 RegisterJobType 推断
+	TaskType() string
 }
 
 // QueueInterface 定义队列驱动接口
@@ -105,7 +109,7 @@ type QueueInterface interface {
 
 // Config represents queue configuration
 type Config struct {
-	Driver  string                 `mapstructure:"driver"`  // redis or mysql
+	Driver  string                 `mapstructure:"driver"`  // redis
 	Options map[string]interface{} `mapstructure:"options"` // driver-specific options
 }
 
@@ -160,11 +164,9 @@ func NewManager(config Config) (*Manager, error) {
 	var driver QueueInterface
 	var err error
 
-	switch config.Driver {
-	case "redis":
-		driver, err = NewRedisQueue(config)
-	case "database", "mysql", "postgres", "postgresql", "pg":
-		driver, err = NewDatabaseQueue(config)
+	switch strings.ToLower(strings.TrimSpace(config.Driver)) {
+	case "redis", "asynq":
+		driver, err = NewAsynqQueue(config)
 	default:
 		return nil, ErrUnsupportedDriver
 	}
@@ -181,6 +183,7 @@ func NewManager(config Config) (*Manager, error) {
 
 // Push 推送任务
 func (m *Manager) Push(ctx context.Context, job JobInterface) error {
+	ensureJobTypeForPush(job)
 	return m.driver.Push(ctx, job)
 }
 
@@ -191,6 +194,7 @@ func (m *Manager) PushRaw(ctx context.Context, queue string, payload []byte, opt
 
 // Later 延迟推送
 func (m *Manager) Later(ctx context.Context, job JobInterface, delay time.Duration) error {
+	ensureJobTypeForPush(job)
 	return m.driver.Later(ctx, job, delay)
 }
 

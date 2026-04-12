@@ -437,14 +437,13 @@ mysqlcheck -u root -p --repair go_admin
 #### 队列维护
 
 ```bash
-# 查看队列状态
-./queue-status.exe -all
+# 查看队列任务规模（Asynq）
+./queue-status -all
 
-# 清理过期任务
-./queue-cmd.exe -cleanup
+# 清空某队列（慎用）
+./queue -clear -queue=default
 
-# 重置失败任务
-./queue-cmd.exe -reset-failed
+# 可视化与归档任务管理可使用 asynqmon（需单独部署）
 ```
 
 ## 相关文档

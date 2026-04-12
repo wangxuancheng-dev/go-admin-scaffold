@@ -30,11 +30,10 @@
   - 动态切换
 
 ### 3. 系统组件
-- [队列系统](queue.md)
-  - Redis 队列
-  - 数据库队列
-  - 任务管理
-  - 监控工具
+- [队列系统](features/queue.md)
+  - Redis + Asynq
+  - 入队与消费者（`worker` / `QueueService`）
+  - 唯一任务与 CLI 工具
 - [缓存系统](features/cache.md)
   - Redis 缓存
   - 内存缓存

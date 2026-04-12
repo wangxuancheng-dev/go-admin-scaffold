@@ -3,20 +3,29 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"app/internal/config"
+	"app/internal/core/jobs" // RegisterJobType (init) + RegisterAsynqHandlers
 	"app/pkg/logger"
 	"app/pkg/queue"
+
+	"github.com/hibiken/asynq"
 )
 
-// QueueService manages queue workers and jobs using application config (no global viper).
+// QueueService manages Asynq client (enqueue) and Server (workers) using application config.
 type QueueService struct {
-	cfg     *config.Config
-	manager *queue.Manager
-	workers map[string]*queue.Worker
-	mu      sync.RWMutex
+	cfg         *config.Config
+	manager     *queue.Manager
+	asynqSrv    *asynq.Server
+	asynqStop   chan struct{} // closed by Stop() so the server goroutine can Shutdown (must not use Run+external Shutdown: waitForSignals deadlock)
+	asynqWG     sync.WaitGroup
+	concurrency int
+	mu          sync.RWMutex
+	started     bool
 }
 
 // NewQueueService builds a queue service from loaded config.
@@ -25,35 +34,23 @@ func NewQueueService(cfg *config.Config) (*QueueService, error) {
 		return nil, fmt.Errorf("config is required")
 	}
 
-	qc := queue.Config{
-		Driver:  cfg.Queue.Driver,
-		Options: make(map[string]any),
+	driver := strings.ToLower(strings.TrimSpace(cfg.Queue.Driver))
+	if driver == "" {
+		driver = "redis"
+	}
+	if driver != "redis" && driver != "asynq" {
+		return nil, fmt.Errorf("unsupported queue driver %q (only redis/asynq)", cfg.Queue.Driver)
 	}
 
-	switch cfg.Queue.Driver {
-	case "redis":
-		redisPort := cfg.Redis.Port
-		if redisPort == "" {
-			redisPort = "6379"
-		}
-		connectionStr := fmt.Sprintf("redis://%s:%s/%d", cfg.Redis.Host, redisPort, cfg.Redis.DB)
-		if cfg.Redis.Password != "" {
-			connectionStr = fmt.Sprintf("redis://:%s@%s:%s/%d", cfg.Redis.Password, cfg.Redis.Host, redisPort, cfg.Redis.DB)
-		}
-		qc.Options["connection"] = connectionStr
-		qc.Options["queue"] = cfg.Queue.Queue
-		if cfg.Queue.StreamGroup != "" {
-			qc.Options["stream_group"] = cfg.Queue.StreamGroup
-		}
-		if cfg.Queue.UniqueTTL > 0 {
-			qc.Options["unique_ttl"] = time.Duration(cfg.Queue.UniqueTTL) * time.Second
-		}
-
-	case "database", "mysql", "postgres", "postgresql", "pg":
-		return nil, fmt.Errorf("database driver requires external database connection setup")
-
-	default:
-		return nil, fmt.Errorf("unsupported queue driver: %s", cfg.Queue.Driver)
+	connectionStr := config.QueueRedisConnectionURL(cfg)
+	qc := queue.Config{
+		Driver:  "redis",
+		Options: map[string]any{},
+	}
+	qc.Options["connection"] = connectionStr
+	qc.Options["queue"] = cfg.Queue.Queue
+	if cfg.Queue.UniqueTTL > 0 {
+		qc.Options["unique_ttl"] = time.Duration(cfg.Queue.UniqueTTL) * time.Second
 	}
 
 	manager, err := queue.NewManager(qc)
@@ -64,68 +61,99 @@ func NewQueueService(cfg *config.Config) (*QueueService, error) {
 	return &QueueService{
 		cfg:     cfg,
 		manager: manager,
-		workers: make(map[string]*queue.Worker),
 	}, nil
 }
 
-// Start launches workers according to cfg.Queue.Queues.
+// Start launches a single asynq.Server for all configured queues (weights from priority, concurrency from sum of processes).
 func (s *QueueService) Start() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started {
+		return fmt.Errorf("queue service already started")
+	}
 	if len(s.cfg.Queue.Queues) == 0 {
 		return fmt.Errorf("no queues configured")
 	}
 
-	wcfg := s.cfg.Queue.Worker
-	for name, qd := range s.cfg.Queue.Queues {
-		processes := qd.Processes
-		if processes < 1 {
-			processes = 1
-		}
-
-		options := queue.WorkerOptions{
-			Sleep:   time.Duration(wcfg.Sleep) * time.Second,
-			MaxJobs: int64(wcfg.MaxJobs),
-			MaxTime: time.Duration(wcfg.MaxTime) * time.Second,
-			Rest:    time.Duration(wcfg.Rest) * time.Second,
-			Memory:  int64(wcfg.Memory),
-			Tries:   wcfg.Tries,
-			Timeout: time.Duration(wcfg.Timeout) * time.Second,
-		}
-
-		for i := 0; i < processes; i++ {
-			workerName := fmt.Sprintf("%s-%d", name, i+1)
-			opts := options
-			if s.cfg.Queue.Driver == "redis" {
-				opts.ConsumerName = workerName
-			}
-			worker := queue.NewWorker(s.manager, []string{name}, opts)
-
-			s.mu.Lock()
-			s.workers[workerName] = worker
-			s.mu.Unlock()
-
-			go func(w *queue.Worker, wname string) {
-				logger.Sugared().Infow("queue worker started", "worker", wname)
-				w.Start()
-				logger.Sugared().Infow("queue worker stopped", "worker", wname)
-
-				s.mu.Lock()
-				delete(s.workers, wname)
-				s.mu.Unlock()
-			}(worker, workerName)
-		}
+	redisOpt, err := queue.AsynqRedisConnOpt(config.QueueRedisConnectionURL(s.cfg))
+	if err != nil {
+		return fmt.Errorf("asynq redis opt: %w", err)
 	}
+
+	queues := make(map[string]int)
+	concurrency := 0
+	for name, qd := range s.cfg.Queue.Queues {
+		p := qd.Priority
+		if p <= 0 {
+			p = 1
+		}
+		queues[name] = p
+		proc := qd.Processes
+		if proc < 1 {
+			proc = 1
+		}
+		concurrency += proc
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	mux := asynq.NewServeMux()
+	jobs.RegisterAsynqHandlers(mux)
+
+	shutdownSec := s.cfg.Queue.Worker.Timeout
+	if shutdownSec <= 0 {
+		shutdownSec = 30
+	}
+	srv := asynq.NewServer(redisOpt, asynq.Config{
+		Concurrency:     concurrency,
+		Queues:          queues,
+		ShutdownTimeout: time.Duration(shutdownSec) * time.Second,
+	})
+
+	s.asynqSrv = srv
+	stopCh := make(chan struct{})
+	s.asynqStop = stopCh
+	s.concurrency = concurrency
+	s.started = true
+
+	s.asynqWG.Add(1)
+	go func() {
+		defer s.asynqWG.Done()
+		logger.Sugared().Infow("asynq server starting", "concurrency", concurrency, "queues", queues)
+		if err := srv.Start(mux); err != nil {
+			logger.Sugared().Errorw("asynq server start failed", "error", err)
+			s.mu.Lock()
+			if s.asynqSrv == srv {
+				s.started = false
+				s.asynqSrv = nil
+				s.asynqStop = nil
+			}
+			s.mu.Unlock()
+			return
+		}
+		logger.Sugared().Infow("asynq server started", "concurrency", concurrency, "queues", queues)
+		<-stopCh
+		srv.Shutdown()
+	}()
 
 	return nil
 }
 
-// Stop stops all workers.
+// Stop shuts down the asynq Server.
 func (s *QueueService) Stop() {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	srv := s.asynqSrv
+	stopCh := s.asynqStop
+	s.asynqSrv = nil
+	s.asynqStop = nil
+	s.started = false
+	s.mu.Unlock()
 
-	for name, worker := range s.workers {
-		logger.Sugared().Infow("stopping queue worker", "worker", name)
-		worker.Stop()
+	if srv != nil && stopCh != nil {
+		logger.Sugared().Info("stopping asynq server")
+		close(stopCh)
+		s.asynqWG.Wait()
 	}
 }
 
@@ -169,20 +197,22 @@ func (s *QueueService) Clear(ctx context.Context, q string) error {
 	return s.manager.Clear(ctx, q)
 }
 
-// GetWorkerCount returns running worker count.
+// GetWorkerCount returns asynq concurrency when the server is running, else 0.
 func (s *QueueService) GetWorkerCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.workers)
+	if !s.started {
+		return 0
+	}
+	return s.concurrency
 }
 
-// GetActiveQueues returns worker instance names currently registered.
+// GetActiveQueues returns configured queue names (sorted).
 func (s *QueueService) GetActiveQueues() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]string, 0, len(s.workers))
-	for name := range s.workers {
+	out := make([]string, 0, len(s.cfg.Queue.Queues))
+	for name := range s.cfg.Queue.Queues {
 		out = append(out, name)
 	}
+	sort.Strings(out)
 	return out
 }

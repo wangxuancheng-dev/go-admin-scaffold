@@ -1,40 +1,51 @@
 # 队列系统
 
-本文档详细说明了 Go Admin Scaffold 的队列系统功能和使用方法。
+本文档说明 Go Admin Scaffold 的异步队列：基于 **Redis** 与 **[Asynq](https://github.com/hibiken/asynq)**，用于邮件、文件处理、数据同步等后台任务。
 
 ## 系统概述
 
-队列系统支持多种驱动（Redis、数据库），用于处理异步任务，如邮件发送、文件处理、数据同步等。
+- **入队**：`asynq.Client`（`pkg/queue` 的 `Manager.Push` / `Later` / `PushRaw`）。
+- **消费**：`asynq.Server` + `ServeMux`，由 **`internal/core/jobs.RegisterAsynqHandlers`** 按任务类型分发并调用 `JobInterface.Handle()`。
+- **存储与调度**：延迟、重试、归档等由 Asynq 在 Redis 中维护（非自建 Stream/ZSET）。
 
 ### 主要特性
 
-- 多驱动支持（Redis、数据库）
-- 任务优先级管理
-- 失败重试机制
-- 任务超时控制
-- **唯一队列（Unique Job）**：同一队列 + 相同业务键在排队/处理未结束前只接受一次入队（见下文）
-- 任务状态监控
-- 命令行工具支持
+- `driver` 为 `redis` 或 `asynq` 时均走 Asynq 实现
+- 多队列与权重（`queue.queues` 的 `priority` → Asynq 队列权重）
+- 并发度为各队列 `processes` 之和（`QueueService.Start` / `cmd/worker`）
+- 任务级 `Timeout`、`MaxAttempts` 映射为 Asynq 的 `Timeout`、`MaxRetry`
+- **唯一任务**：`BaseJob.UniqueKey` + Asynq `Unique(ttl)`；重复入队返回 `queue.ErrDuplicateJob`（`asynq.ErrDuplicateTask`）
+- `Manager.Size` / `Clear` 通过 `asynq.Inspector`（统计为各状态任务总和）
+
+## 任务类型与 `Handle`（job_type）
+
+1. 在 `init` 中 **`queue.RegisterJobType("name", func() queue.JobInterface { return &YourJob{} })`**。
+2. **`Manager.Push` / `Later`** 会为已注册的具体类型自动填入 **`BaseJob.JobType`**（与 Asynq 任务类型字符串一致）；也可手动设置 `JobType`。
+3. 消费端必须在同一进程注册 **Asynq 处理器**：**`jobs.RegisterAsynqHandlers(mux)`**（见 `internal/core/jobs/asynq_handlers.go`）。业务侧需 **`import _ "app/internal/core/jobs"`** 或显式 import 含 `RegisterJobType` 的包，保证类型注册与 handler 一致。
+4. 入队 payload 为 **整段任务 JSON**；Asynq 的 *task type* = `job_type` 字段。
+
+### 与 `Pop` 的关系
+
+当前驱动 **不提供** 拉取式 `Pop` / `Delete` / `Release`（返回 `queue.ErrPullNotSupported`）。消费请使用 **`cmd/worker`** 或应用内 **`QueueService.Start()`** 启动的 Asynq Server。
+
+项目内参考：`internal/core/jobs/register.go`、`jobs.JobTypeExample` 等。
 
 ## 唯一队列（Unique Job）
 
-与 [定时任务里的 `.Unique()`](scheduling.md#分布式环境) **不是同一概念**：那里是多机调度时只有一个实例跑 **Cron**；这里是 **异步队列** 里按业务键（如订单号）去重，类似 Laravel `ShouldBeUnique`。
+与 [定时任务里的「唯一」](scheduling.md#分布式环境) **不同**：定时侧是多机 Cron 互斥；队列侧是按业务键（如订单号）在 **Asynq Unique 窗口内** 去重。
 
-### 结构体任务：设置 `BaseJob.UniqueKey`
-
-项目内示例见 `internal/core/jobs/example_job.go` 中的 `ProcessOrderJob` / `NewProcessOrderJob`：
+### 结构体任务
 
 ```go
 import (
     "errors"
     "app/internal/core/jobs"
-    "app/pkg/queue"
 )
 
 job := jobs.NewProcessOrderJob("20250412001", "recalculate_total")
 if err := queueService.Push(ctx, job); err != nil {
     if errors.Is(err, queue.ErrDuplicateJob) {
-        // 同一订单任务已在队列或执行中，可按 409 等语义返回
+        // 相同 Unique 约束下任务已存在
         return err
     }
     return err
@@ -43,197 +54,152 @@ if err := queueService.Push(ctx, job); err != nil {
 
 也可用 `queue.NewBaseJob` 的 `options` 传入 `"unique_key"`（字符串）。
 
-### `PushRaw` 与 options
+### `PushRaw`
 
 ```go
 payload := []byte(`{"queue":"default","message":"ping"}`)
 err := queueService.PushRaw(ctx, "default", payload, map[string]interface{}{
+    "task_type":  "raw", // Asynq 任务类型；项目内 `raw` 注册为空操作 handler
     "unique_key": "raw:order:20250412001",
 })
-// 若 payload 为 JSON 对象且不含 unique_key，驱动会把 options 里的键合并进 payload，便于完成后释放 Redis 锁 / DB 唯一约束
 ```
 
-### 配置：Redis 锁 TTL
+若 payload 为 JSON 对象且不含 `unique_key`，驱动会把 options 里的 `unique_key` 合并进 JSON，以便 Asynq `Unique` 与业务键一致。
 
-在应用配置中（秒）：
+### 配置：`unique_ttl`
+
+业务 **`unique_key`** 在本项目中映射为稳定的 **`asynq.TaskID`**（由队列名 + 任务类型 + `unique_key` 派生），与是否跑 worker 无关；同一键在 Asynq 仍保留该任务 ID 期间再次入队会得到 **`ErrDuplicateJob`**（底层可能为 `ErrTaskIDConflict`）。
 
 ```yaml
 queue:
-  unique_ttl: 86400   # 可选；0 或未设置则使用驱动默认（约 24h 或与任务 timeout 相关）
+  # 历史字段：此前配合 Asynq Unique(TTL) 使用；当前 unique_key 走 TaskID，此项可忽略或预留给后续扩展
+  # unique_ttl: 86400
 ```
 
 ### 返回值
 
-重复入队时返回 `queue.ErrDuplicateJob`，请使用 `errors.Is(err, queue.ErrDuplicateJob)` 判断。
+重复入队返回 **`queue.ErrDuplicateJob`**，请使用 **`errors.Is(err, queue.ErrDuplicateJob)`** 判断。
 
 ## 配置说明
 
-### 1. 基础配置
+与 `configs/config.yaml` 对齐要点：
 
 ```yaml
 queue:
-  default: "redis"         # 默认队列驱动
-  connections:
-    redis:
-      driver: "redis"      # Redis驱动
-      queue: "default"     # 队列名称
-      retry_after: 90      # 重试等待时间(秒)
-      timeout: 60          # 任务超时时间(秒)
-    database:
-      driver: "database"   # 数据库驱动
-      table: "jobs"        # 任务表名
-      queue: "default"     # 队列名称
-      retry_after: 90      # 重试等待时间(秒)
-      timeout: 60          # 任务超时时间(秒)
+  driver: "redis"          # 或 asynq；均使用 Asynq
+  queue: "default"         # Manager 默认队列名
+  unique_ttl: 86400        # 可选，Unique 窗口（秒）
+  connection:
+    db: 1                  # 与顶层 redis 共用 host/port/password，仅换库；或写 redis: "redis://..." 覆盖整 URL
+  worker:
+    timeout: 60            # Asynq Server ShutdownTimeout（秒）
+  queues:
+    default:
+      priority: 3
+      processes: 1
 ```
 
-### 2. 环境变量
+历史字段 **`stream_maxlen` / `stream_trim_approx` / `stream_group`** 仍可出现于 YAML，**当前实现不读取**。
 
-```bash
-QUEUE_CONNECTION=redis     # 默认队列驱动
-QUEUE_RETRY_AFTER=90      # 重试等待时间
-QUEUE_TIMEOUT=60          # 任务超时时间
-```
+### 环境变量（节选）
+
+与 `internal/config` 一致，例如：`QUEUE_DRIVER`、`QUEUE_NAME`、`REDIS_*` 等。队列 URL：`queue.connection.redis` 非空则用之；否则用 **`redis.host` / `port` / `password`** 与 **`queue.connection.db`**（若配置）或 **`redis.db`** 拼装（见 `QueueRedisConnectionURL`）。
 
 ## 使用方法
 
-### 1. 创建任务
+### 1. 定义任务并实现 `Handle`
+
+嵌入 `queue.BaseJob`，实现 `queue.JobInterface`（含 `TaskType()`，默认来自嵌入字段 `JobType`）。
+
+### 2. 注册类型与 Handler
+
+- `RegisterJobType`：解码 JSON → 具体类型。
+- `RegisterAsynqHandlers`：为每个 `job_type` 注册 `mux.HandleFunc`，内部 `queue.DecodeJobFromJSON` 后调用 `Handle()`。
+
+新增任务类型时：**同时** 在 `register.go` 里 `RegisterJobType`，在 `asynq_handlers.go` 里 `register(JobTypeXxx)`（或改为循环注册表）。
+
+### 3. 入队
 
 ```go
-import "github.com/1768177868/go-admin-scaffold/pkg/queue"
+import (
+    "context"
+    "app/internal/core/jobs"
+    "app/internal/core/services"
+)
 
-// 创建任务
-job := queue.NewJob("send_email", map[string]interface{}{
-    "to": "user@example.com",
-    "subject": "Welcome",
-    "body": "Welcome to our platform",
-})
+ctx := context.Background()
+svc, err := services.NewQueueService(cfg)
+if err != nil {
+    return err
+}
+defer svc.Stop() // 若调用了 Start
 
-// 设置任务选项
-job.OnQueue("high")           // 设置队列
-job.Delay(5 * time.Minute)    // 延迟执行
-job.Timeout(30 * time.Second) // 设置超时
-job.Retries(3)               // 设置重试次数
-
-// 分发任务
-err := queue.Dispatch(job)
+job := jobs.NewExampleJob("hello")
+if err := svc.Push(ctx, job); err != nil {
+    return err
+}
 ```
 
-### 2. 处理任务
+延迟：
 
 ```go
-// 定义任务处理器
-type EmailJob struct {
-    To      string
-    Subject string
-    Body    string
-}
-
-func (j *EmailJob) Handle() error {
-    // 处理发送邮件逻辑
-    return nil
-}
-
-// 注册任务处理器
-queue.Register("send_email", &EmailJob{})
-
-// 启动队列处理
-queue.Start()
+err := svc.Later(ctx, job, 5*time.Minute)
 ```
 
-### 3. 任务状态
+### 4. 启动消费者
 
-```go
-// 获取任务状态
-status, err := queue.GetJobStatus(jobID)
+**二选一**（不要重复消费同一队列）：
 
-// 检查任务是否完成
-if status.IsCompleted() {
-    // 处理完成逻辑
-}
-
-// 获取任务结果
-result, err := queue.GetJobResult(jobID)
-```
+- **独立进程**：`go run ./cmd/worker`（或编译后的 `worker`），读取 `queue.queues` 与 Redis URL。
+- **与应用同进程**：`queueService.Start()`（内部 `asynq.Server.Run`）；退出前 `queueService.Stop()`。
 
 ## 命令行工具
 
-### 1. 启动队列服务
+构建示例：`go build -o queue ./cmd/queue`、`go build -o worker ./cmd/worker`。
+
+### `cmd/queue`
+
+| 参数 | 说明 |
+|------|------|
+| `-config` | 配置文件路径，默认 `configs/config.yaml` |
+| `-start` | 在本进程启动 Asynq Server，Ctrl+C 时优雅退出 |
+| `-stop` | 调用 `QueueService.Stop()`；**每次运行均为新进程**，单独执行通常无正在运行的 Server，一般用于与 `-start` 同一次设计的扩展；独立 **`worker`** 请对进程发 **SIGINT/SIGTERM** |
+| `-clear -queue=<name>` | 清空指定 Asynq 队列（Inspector 批量删除各状态任务） |
+| `-list` | 列出配置中的队列名 |
+| `-status` | 用 `Manager.Size` 查任务数；**`Active workers` 仅在本次进程调用过 `-start` 且未退出时为非零** |
 
 ```bash
-# 使用默认配置启动
-./queue-cmd.exe -start
-
-# 指定配置文件启动
-./queue-cmd.exe -config=configs/production.yaml -start
-
-# 直接运行worker
-./worker.exe
+go run ./cmd/queue -start
+go run ./cmd/queue -clear -queue=default
+go run ./cmd/queue -list
 ```
 
-### 2. 查看队列状态
+### `cmd/queue-status`
 
 ```bash
-# 查看所有队列状态
-./queue-status.exe -all
-
-# 查看特定队列状态
-./queue-status.exe -queue=default
-
-# 查看特定驱动的队列状态
-./queue-status.exe -queue=high -driver=database
+go run ./cmd/queue-status -all
+go run ./cmd/queue-status -queue=default
 ```
 
-### 3. 管理任务
+输出为 Asynq **队列维度**的任务总数（含 pending / scheduled / active 等，与 `QueueInfo.Size` 一致）。
 
-```bash
-# 重试失败的任务
-./queue-cmd.exe -retry=job_id
+### `cmd/queue-test`
 
-# 删除任务
-./queue-cmd.exe -delete=job_id
+- 默认：Asynq 自动化用例（Push、Size、`Later`、`PushRaw`、`UniqueKey`、`Pop` 返回 `ErrPullNotSupported` 等）。
+- `-seed`：向 `default` / `high` / `low` 写入示例任务，便于联调 `worker`。
 
-# 清空队列
-./queue-cmd.exe -flush=queue_name
-```
+### 监控（可选）
 
-## 开发环境
-
-### 1. Windows 环境
-
-```bash
-# 启动队列服务
-./queue-cmd.exe -start
-
-# 后台运行
-Start-Process -NoNewWindow -FilePath "./worker.exe"
-
-# 检查状态
-./queue-status.exe -all
-```
-
-### 2. Mac 环境
-
-```bash
-# 启动队列服务
-./queue-cmd -start
-
-# 后台运行
-nohup ./worker > worker.log 2>&1 &
-
-# 检查状态
-./queue-status -all
-```
+可使用 **[asynqmon](https://github.com/hibiken/asynqmon)** 连接同一 Redis，查看任务与队列状态。
 
 ## 生产环境
 
-### 1. 进程管理
+### systemd 示例（独立 worker）
 
-#### Linux (systemd)
 ```ini
 [Unit]
-Description=Go Admin Queue Worker
-After=network.target
+Description=Go Admin Asynq Worker
+After=network.target redis.service
 
 [Service]
 Type=simple
@@ -247,113 +213,24 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-#### Windows (NSSM)
-```powershell
-# 安装服务
-nssm install GoAdminQueue "C:\path\to\worker.exe"
-nssm set GoAdminQueue AppDirectory "C:\path\to\app"
-nssm set GoAdminQueue DisplayName "Go Admin Queue Worker"
-nssm set GoAdminQueue Description "Go Admin Queue Worker Service"
-nssm set GoAdminQueue Start SERVICE_AUTO_START
-nssm start GoAdminQueue
-```
+### 实践建议
 
-### 2. 最佳实践
-
-1. 配置管理
-   - 使用单独的配置文件
-   - 敏感信息使用环境变量
-   - 定期检查配置有效性
-
-2. 监控告警
-   - 监控队列长度
-   - 监控处理延迟
-   - 监控失败任务
-   - 设置告警阈值
-
-3. 性能优化
-   - 合理设置并发数
-   - 优化任务处理逻辑
-   - 使用适当的队列驱动
-   - 定期清理过期任务
-
-4. 高可用
-   - 多worker部署
-   - 任务重试机制
-   - 故障自动恢复
-   - 数据备份策略
+1. **连接**：默认只配 **`queue.connection.db`** 与顶层 `redis` 即可分库；必要时再用 `queue.connection.redis` 写完整 URL。
+2. **并发**：通过各队列 `processes` 调节总 `Concurrency`。
+3. **优雅退出**：依赖 Asynq `Shutdown`/`ShutdownTimeout`（来自 `queue.worker.timeout`）。
+4. **可观测性**：队列长度用 `queue-status` 或 asynqmon；失败任务在 Asynq **归档** 中查看。
 
 ## 故障排除
 
-### 1. 任务未处理
-
-检查：
-- 队列服务是否运行
-- 任务是否正确分发
-- 处理器是否正确注册
-- 日志中是否有错误
-
-### 2. 任务积压
-
-解决：
-- 增加worker数量
-- 优化任务处理逻辑
-- 检查系统资源使用
-- 考虑任务优先级
-
-### 3. 内存使用过高
-
-解决：
-- 检查任务数据大小
-- 优化任务处理逻辑
-- 调整worker数量
-- 监控内存使用
-
-### 4. 连接问题
-
-解决：
-- 检查Redis/数据库连接
-- 验证网络连接
-- 检查认证信息
-- 查看连接日志
-
-## 维护命令
-
-### 1. 日常维护
-
-```bash
-# 查看队列状态
-./queue-status.exe -all
-
-# 清理过期任务
-./queue-cmd.exe -cleanup
-
-# 重置失败任务
-./queue-cmd.exe -reset-failed
-
-# 导出队列统计
-./queue-cmd.exe -export-stats
-```
-
-### 2. 故障恢复
-
-```bash
-# 重启队列服务
-./queue-cmd.exe -restart
-
-# 重置特定队列
-./queue-cmd.exe -reset=queue_name
-
-# 恢复失败任务
-./queue-cmd.exe -recover-failed
-
-# 检查队列健康
-./queue-cmd.exe -health-check
-```
+| 现象 | 检查 |
+|------|------|
+| 任务不入队 | Redis 是否可达、`QueueRedisConnectionURL` 是否正确 |
+| 任务不执行 | 是否启动 `worker` 或 `QueueService.Start()`；`job_type` 是否已 `RegisterAsynqHandlers` |
+| 重复入队被拒 | 是否为 `ErrDuplicateJob`；Unique 窗口内 payload/类型是否相同 |
+| `Handle` 未跑到 | 是否 import 了注册 `RegisterJobType` 的包；JSON 是否含正确 `job_type` |
 
 ## 相关文档
 
 - [配置说明](../getting-started/configuration.md)
-- [开发环境配置](../advanced/development.md)
+- [项目结构](../getting-started/structure.md)
 - [部署指南](../deployment/README.md)
-- [API 文档](../api/README.md) 

@@ -11,8 +11,7 @@
 │   ├── worker/            # 队列工作进程
 │   ├── queue/             # 队列管理工具
 │   ├── queue-status/      # 队列状态工具
-│   ├── queue-test/        # 队列测试工具
-│   ├── add-test-jobs/     # 测试任务添加工具
+│   ├── queue-test/        # 队列测试（默认跑用例；-seed 写入示例任务）
 │   ├── migrate/           # 数据库迁移工具
 │   ├── tools/             # 通用工具
 │   └── artisan/           # 命令行工具
@@ -73,24 +72,17 @@
 - 加载配置和初始化服务
 
 #### worker/
-- `main.go`: 队列工作进程入口
-- 处理异步任务
-- 管理队列服务
+- `main.go`: 独立 **Asynq Server**（读取 `queue.queues` 与 Redis URL，与业务中 `QueueService.Start()` 二选一部署）
 
 #### queue/
-- 队列管理工具
-- 提供队列操作命令
-- 队列服务控制
+- `main.go`: 队列 CLI（`-start` 启动 Asynq Server、`-clear`、`-list`、`-status` 等）
 
 #### queue-status/
-- 队列状态监控工具
-- 查看队列运行状态
-- 统计队列任务信息
+- 只读查看各 Asynq 队列任务总数（`QueueInfo.Size`）
 
 #### queue-test/
-- 队列测试工具
-- 测试队列功能
-- 性能测试
+- 默认：Asynq 队列自动化用例（Push、Size、`Later`、`PushRaw`、`UniqueKey`、`Pop` 不支持等）
+- `go run ./cmd/queue-test -seed`：向 default/high/low 写入示例任务，便于联调 `worker`
 
 #### migrate/
 - 数据库迁移工具
@@ -187,9 +179,7 @@
 - 日志轮转
 
 #### queue/
-- 队列接口
-- Redis 队列
-- 数据库队列
+- 队列接口与 `Manager`（Asynq 客户端 / Inspector）
 
 #### response/
 - 响应格式

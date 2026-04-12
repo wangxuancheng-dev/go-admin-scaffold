@@ -1,14 +1,61 @@
 package queue
 
 import (
+	"bytes"
 	"encoding/json"
 	"time"
 )
+
+// envelopeJSONFieldNames are top-level keys used when a JobInterface is stored
+// via json.Marshal. Typed jobs often add sibling fields (e.g. "message") while
+// BaseJob.Payload stays empty; Pop unmarshals into BaseJob only, so we fold any
+// other top-level keys into Payload for GetPayload and worker handlers.
+var envelopeJSONFieldNames = map[string]struct{}{
+	"id": {}, "queue": {}, "unique_key": {}, "payload": {},
+	"attempts": {}, "max_attempts": {}, "delay": {}, "timeout": {},
+	"retry_after": {}, "backoff": {}, "created_at": {}, "updated_at": {}, "reserved_at": {},
+	"job_type": {},
+}
+
+func payloadJSONFieldEmpty(p json.RawMessage) bool {
+	if len(p) == 0 {
+		return true
+	}
+	return bytes.Equal(bytes.TrimSpace(p), []byte("null"))
+}
+
+func hydratePayloadFromFullJSON(raw []byte, job *BaseJob) error {
+	if job == nil || !payloadJSONFieldEmpty(job.Payload) {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return err
+	}
+	extras := make(map[string]json.RawMessage)
+	for k, v := range m {
+		if _, known := envelopeJSONFieldNames[k]; known {
+			continue
+		}
+		extras[k] = v
+	}
+	if len(extras) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(extras)
+	if err != nil {
+		return err
+	}
+	job.Payload = b
+	return nil
+}
 
 // BaseJob 基础任务结构体
 type BaseJob struct {
 	ID          string          `json:"id"`
 	Queue       string          `json:"queue"`
+	// JobType 非空且已 RegisterJobType 时，Pop 解码为对应具体类型以便执行 Handle（见 job_registry.go）
+	JobType string `json:"job_type,omitempty"`
 	// UniqueKey 非空时，同一队列内相同 key 的任务在尚未完成前只会入队一次（需驱动支持）
 	UniqueKey   string          `json:"unique_key,omitempty"`
 	Payload     json.RawMessage `json:"payload"`
@@ -146,4 +193,9 @@ func (j *BaseJob) SetReservedAt(t *time.Time) {
 // GetUniqueKey 返回唯一键（去重用）
 func (j *BaseJob) GetUniqueKey() string {
 	return j.UniqueKey
+}
+
+// TaskType 返回 Asynq 任务类型（与 job_type 一致）
+func (j *BaseJob) TaskType() string {
+	return j.JobType
 }

@@ -50,7 +50,7 @@ func main() {
 	}
 
 	// 推送延迟清理任务
-	options, _ := json.Marshal(map[string]interface{}{
+	options, _ := json.Marshal(map[string]any{
 		"type":    "logs",
 		"pattern": "*.log",
 	})

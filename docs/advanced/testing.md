@@ -135,36 +135,41 @@ func TestLoginHandler(t *testing.T) {
 测试代码性能和资源使用。
 
 ```go
-// pkg/queue/redis_test.go
-package queue
+// 示例：对 Asynq 驱动入队做基准测试（需可连 Redis）
+package queue_test
 
 import (
+    "context"
     "testing"
     "time"
+
+    "app/pkg/queue"
 )
 
-func BenchmarkRedisQueue_Push(b *testing.B) {
-    queue := NewRedisQueue()
-    job := NewJob("test", map[string]interface{}{"data": "test"})
+func BenchmarkAsynqQueue_Push(b *testing.B) {
+    mgr, err := queue.NewManager(queue.Config{
+        Driver: "redis",
+        Options: map[string]interface{}{
+            "connection": "redis://127.0.0.1:6379/15",
+            "queue":      "bench",
+        },
+    })
+    if err != nil {
+        b.Fatal(err)
+    }
+    defer mgr.Close()
 
+    job := &benchJob{BaseJob: queue.BaseJob{Queue: "bench", JobType: "bench", MaxAttempts: 1, Timeout: time.Minute}}
+    ctx := context.Background()
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
-        queue.Push(job)
+        _ = mgr.Push(ctx, job)
     }
 }
 
-func BenchmarkRedisQueue_Process(b *testing.B) {
-    queue := NewRedisQueue()
-    for i := 0; i < 1000; i++ {
-        job := NewJob("test", map[string]interface{}{"data": i})
-        queue.Push(job)
-    }
+type benchJob struct{ queue.BaseJob }
 
-    b.ResetTimer()
-    for i := 0; i < b.N; i++ {
-        queue.Process()
-    }
-}
+func (b *benchJob) Handle() error { return nil }
 ```
 
 ## 测试工具

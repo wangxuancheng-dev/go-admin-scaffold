@@ -103,11 +103,17 @@ type QueueConfig struct {
 	Driver      string `mapstructure:"driver"`
 	Queue       string `mapstructure:"queue"`
 	StreamGroup string `mapstructure:"stream_group"` // redis: XREADGROUP consumer group name (default queue_workers)
+	// StreamMaxLen Redis Stream XADD MAXLEN（0=不裁剪）；集群/主从同样生效，由 Redis 执行裁剪
+	StreamMaxLen int `mapstructure:"stream_maxlen"`
+	// StreamTrimApprox true 时使用 MAXLEN ~ 近似裁剪（推荐，开销更低）
+	StreamTrimApprox bool `mapstructure:"stream_trim_approx"`
 	// UniqueTTL 秒；Redis 唯一任务锁 TTL（0 表示由驱动默认，如 24h 或与任务超时相关）
 	UniqueTTL int `mapstructure:"unique_ttl"`
-	Connection  struct {
-		Redis    string `mapstructure:"redis"`
-		Database string `mapstructure:"database"`
+	Connection struct {
+		// Redis 非空时作为完整 redis:// URL，优先级最高
+		Redis string `mapstructure:"redis"`
+		// DB 在 Redis 为空时生效：与顶层 redis.host/port/password 拼装 URL 时使用的库号；省略则用 redis.db
+		DB *int `mapstructure:"db"`
 	} `mapstructure:"connection"`
 	Worker struct {
 		Sleep   int `mapstructure:"sleep"`
@@ -235,9 +241,19 @@ func populateConfigFromViper(v *viper.Viper) (*Config, error) {
 	config.Queue.Driver = getEnvOrDefault("QUEUE_DRIVER", v.GetString("queue.driver"))
 	config.Queue.Queue = getEnvOrDefault("QUEUE_NAME", v.GetString("queue.queue"))
 	config.Queue.StreamGroup = v.GetString("queue.stream_group")
+	if !v.IsSet("queue.stream_trim_approx") {
+		v.SetDefault("queue.stream_trim_approx", true)
+	}
+	config.Queue.StreamTrimApprox = v.GetBool("queue.stream_trim_approx")
+	config.Queue.StreamMaxLen = getEnvIntOrDefault("QUEUE_STREAM_MAXLEN", v.GetInt("queue.stream_maxlen"))
 	config.Queue.UniqueTTL = v.GetInt("queue.unique_ttl")
 	config.Queue.Connection.Redis = v.GetString("queue.connection.redis")
-	config.Queue.Connection.Database = v.GetString("queue.connection.database")
+	if v.IsSet("queue.connection.db") {
+		db := v.GetInt("queue.connection.db")
+		config.Queue.Connection.DB = &db
+	} else {
+		config.Queue.Connection.DB = nil
+	}
 	config.Queue.Worker.Sleep = v.GetInt("queue.worker.sleep")
 	config.Queue.Worker.MaxJobs = v.GetInt("queue.worker.max_jobs")
 	config.Queue.Worker.MaxTime = v.GetInt("queue.worker.max_time")
@@ -340,6 +356,33 @@ func (c *Config) SuperAdminUintIDs() []uint {
 		return nil
 	}
 	return c.SuperAdminIDs
+}
+
+// QueueRedisConnectionURL returns queue.connection.redis when set; otherwise redis:// built from
+// redis.host/port/password and redis.db, or queue.connection.db overrides the database index only.
+func QueueRedisConnectionURL(c *Config) string {
+	if c == nil {
+		return ""
+	}
+	if s := strings.TrimSpace(c.Queue.Connection.Redis); s != "" {
+		return s
+	}
+	port := strings.TrimSpace(c.Redis.Port)
+	if port == "" {
+		port = "6379"
+	}
+	host := strings.TrimSpace(c.Redis.Host)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	db := c.Redis.DB
+	if c.Queue.Connection.DB != nil {
+		db = *c.Queue.Connection.DB
+	}
+	if pwd := strings.TrimSpace(c.Redis.Password); pwd != "" {
+		return fmt.Sprintf("redis://:%s@%s:%s/%d", pwd, host, port, db)
+	}
+	return fmt.Sprintf("redis://%s:%s/%d", host, port, db)
 }
 
 // getEnvOrDefault gets environment variable value or returns default value

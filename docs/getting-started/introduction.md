@@ -33,11 +33,10 @@ Go Admin Scaffold 是一个基于 Go 语言开发的现代化后台管理系统�
 
 ### 2. 系统组件
 - 💫 **队列系统**
-  - Redis 队列支持
-  - 数据库队列支持
-  - 任务重试机制
-  - 延迟任务处理
-  - 队列监控工具
+  - Redis 上的 [Asynq](https://github.com/hibiken/asynq) 异步任务
+  - 延迟任务、失败重试与归档（由 Asynq 管理）
+  - 唯一任务（Unique）与 `queue.ErrDuplicateJob`
+  - `worker` / `queue` / `queue-status` / `queue-test` 工具
 
 - 🗄️ **数据库支持**
   - MySQL 数据库

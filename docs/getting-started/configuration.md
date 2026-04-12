@@ -72,22 +72,32 @@ logger:
 
 ### 5. 队列配置 (queue)
 
+后端为 **[Asynq](https://github.com/hibiken/asynq)**（Redis）。`driver` 填 `redis` 或 `asynq` 均可。
+
 ```yaml
 queue:
-  default: "redis"         # 默认队列驱动：redis, database
-  connections:
-    redis:
-      driver: "redis"      # Redis队列驱动
-      queue: "default"     # 默认队列名称
-      retry_after: 90      # 重试等待时间(秒)
-      timeout: 60          # 任务超时时间(秒)
-    database:
-      driver: "database"   # 数据库队列驱动
-      table: "jobs"        # 任务表名
-      queue: "default"     # 默认队列名称
-      retry_after: 90      # 重试等待时间(秒)
-      timeout: 60          # 任务超时时间(秒)
+  driver: "redis"
+  queue: "default"
+  unique_ttl: 0                 # 秒；Unique 窗口，0 用驱动默认
+  connection:
+    # 不写 redis 时：与顶层 redis 共用 host/port/password，仅用 db 指定逻辑库（可与默认 redis.db 不同）
+    db: 1
+    # 需要完整 URL 时再写：redis: "redis://:pass@host:6379/2"
+  worker:
+    timeout: 60                 # Asynq Server ShutdownTimeout（秒）
+  queues:
+    default:
+      priority: 3
+      processes: 1
+    high:
+      priority: 6
+      processes: 2
+    low:
+      priority: 1
+      processes: 1
 ```
+
+详见 [队列功能说明](../features/queue.md)。
 
 ### 6. 存储配置 (storage)
 

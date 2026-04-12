@@ -1,137 +1,80 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
 	"app/internal/config"
+	"app/internal/core/jobs"
 	"app/pkg/queue"
+
+	"github.com/hibiken/asynq"
 )
 
-type Worker struct {
-	queue    queue.QueueInterface
-	handlers map[string]JobHandler
-	stop     chan struct{}
-	wg       sync.WaitGroup
-}
-
-type JobHandler func(ctx context.Context, payload []byte) error
-
-func NewWorker(q queue.QueueInterface) *Worker {
-	return &Worker{
-		queue:    q,
-		handlers: make(map[string]JobHandler),
-		stop:     make(chan struct{}),
-	}
-}
-
-func (w *Worker) RegisterHandler(queueName string, handler JobHandler) {
-	w.handlers[queueName] = handler
-}
-
-func (w *Worker) Start(concurrency int) {
-	for i := 0; i < concurrency; i++ {
-		w.wg.Add(1)
-		go w.process()
-	}
-}
-
-func (w *Worker) Stop() {
-	close(w.stop)
-	w.wg.Wait()
-}
-
-func (w *Worker) process() {
-	defer w.wg.Done()
-
-	for {
-		select {
-		case <-w.stop:
-			return
-		default:
-			for queueName := range w.handlers {
-				ctx := context.Background()
-				job, err := w.queue.Pop(ctx, queueName)
-				if err == queue.ErrQueueEmpty {
-					time.Sleep(time.Second)
-					continue
-				}
-				if err != nil {
-					log.Printf("Error popping job from queue %s: %v", queueName, err)
-					continue
-				}
-
-				handler := w.handlers[queueName]
-				if err := handler(ctx, job.GetPayload()); err != nil {
-					log.Printf("Error processing job %s: %v", job.GetID(), err)
-					if job.GetAttempts() < job.GetMaxAttempts() {
-						delay := time.Duration(job.GetAttempts()*job.GetAttempts()) * time.Second
-						_ = w.queue.Release(ctx, queueName, job, delay)
-					} else {
-						_ = w.queue.Delete(ctx, queueName, job)
-					}
-				} else {
-					_ = w.queue.Delete(ctx, queueName, job)
-				}
-			}
-		}
-	}
-}
-
 func main() {
-	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("config: %v", err)
+	}
+	if len(cfg.Queue.Queues) == 0 {
+		log.Fatal("no queues configured (queue.queues in config)")
 	}
 
-	queueConfig := queue.Config{
-		Driver: cfg.Queue.Driver,
-	}
-
-	queueConfig.Options = make(map[string]any)
-	queueConfig.Options["connection"] = cfg.Queue.Connection.Redis
-	queueConfig.Options["queue"] = "default"
-
-	// Create queue instance
-	q, err := queue.NewManager(queueConfig)
+	redisURL := config.QueueRedisConnectionURL(cfg)
+	redisOpt, err := queue.AsynqRedisConnOpt(redisURL)
 	if err != nil {
-		log.Fatalf("create queue: %v", err)
+		log.Fatalf("redis url: %v", err)
 	}
-	defer q.Close()
 
-	// ====================== 这里加了启动日志 ======================
-	log.Println("✅ 队列连接成功！Redis:", cfg.Queue.Connection.Redis)
-	log.Println("✅ Worker 已启动，等待任务中...")
+	queues := make(map[string]int)
+	concurrency := 0
+	for name, qd := range cfg.Queue.Queues {
+		p := qd.Priority
+		if p <= 0 {
+			p = 1
+		}
+		queues[name] = p
+		proc := qd.Processes
+		if proc < 1 {
+			proc = 1
+		}
+		concurrency += proc
+	}
+	if concurrency <= 0 {
+		concurrency = 1
+	}
 
-	// Create worker
-	worker := NewWorker(q)
+	mux := asynq.NewServeMux()
+	jobs.RegisterAsynqHandlers(mux)
 
-	// Register job handlers
-	worker.RegisterHandler("emails", func(ctx context.Context, payload []byte) error {
-		log.Println("📩 处理邮件任务:", string(payload))
-		return nil
+	shutdownSec := cfg.Queue.Worker.Timeout
+	if shutdownSec <= 0 {
+		shutdownSec = 30
+	}
+	srv := asynq.NewServer(redisOpt, asynq.Config{
+		Concurrency:     concurrency,
+		Queues:          queues,
+		ShutdownTimeout: time.Duration(shutdownSec) * time.Second,
 	})
 
-	worker.RegisterHandler("notifications", func(ctx context.Context, payload []byte) error {
-		log.Println("🔔 处理通知任务:", string(payload))
-		return nil
-	})
+	log.Printf("asynq worker: redis=%s concurrency=%d queues=%v", redisURL, concurrency, queues)
 
-	// Start worker with concurrency
-	worker.Start(5)
+	// 使用 Start + 本进程单独 Notify + Shutdown：避免与 Run 内 waitForSignals 抢同一信号（曾导致无法退出），
+	// 且在 Windows 上 Ctrl+C 后尽量走 Shutdown 正常 return，减少 exit status 0xc000013a（CONTROL_C_EXIT）。
+	if err := srv.Start(mux); err != nil {
+		log.Fatalf("asynq start: %v", err)
+	}
 
-	// Handle graceful shutdown
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	log.Println("worker running; Ctrl+C or SIGTERM to stop")
 	<-sigCh
+	signal.Stop(sigCh)
 
-	log.Println("🛑 正在关闭 Worker...")
-	worker.Stop()
-	log.Println("✅ Worker 已安全退出")
+	log.Println("shutting down...")
+	srv.Shutdown()
+	log.Println("asynq server exited")
 }

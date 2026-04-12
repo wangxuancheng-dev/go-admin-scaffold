@@ -155,9 +155,8 @@ func (j *CleanupJob) Handle() error {
 }
 
 // ProcessOrderJob 订单异步任务示例：演示「唯一队列」——同一队列下相同 UniqueKey（此处为订单号）
-// 在任务尚未完成（未 Delete）前重复入队会返回 queue.ErrDuplicateJob。
-// 实际 Worker 从 Redis/DB Pop 时通常反序列化为 *queue.BaseJob，若需执行自定义 Handle，
-// 请在业务侧按 payload 类型分发或使用独立 worker 解析为本结构体。
+// 在 Asynq Unique 窗口内重复入队会返回 queue.ErrDuplicateJob。
+// 已通过 register.go 注册 job_type；由 asynq.Server + RegisterAsynqHandlers 解码并执行 Handle。
 type ProcessOrderJob struct {
 	queue.BaseJob
 	OrderID string `json:"order_id"`
