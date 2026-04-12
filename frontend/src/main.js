@@ -8,7 +8,7 @@ import 'nprogress/nprogress.css'
 import App from './App.vue'
 import router from './router'
 import './assets/styles/index.css'
-import { useI18n } from '@/composables/useI18n'
+import i18n from './i18n'
 
 const app = createApp(App)
 
@@ -19,11 +19,8 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, {
-  locale: {
-    name: 'zh-cn'
-  }
-})
+app.use(ElementPlus)
+app.use(i18n)
 
 // 挂载应用
 app.mount('#app')

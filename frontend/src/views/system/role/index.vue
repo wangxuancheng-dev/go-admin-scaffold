@@ -4,16 +4,16 @@
     <div class="filter-container">
       <el-input
         v-model="listQuery.keyword"
-        placeholder="请输入角色名称"
+        :placeholder="t('role.please_enter_role_name')"
         style="width: 200px;"
         class="filter-item"
         @keyup.enter="handleFilter"
       />
       <el-button class="filter-item" type="primary" icon="Search" @click="handleFilter">
-        搜索
+        {{ t('common.search') }}
       </el-button>
       <el-button class="filter-item" style="margin-left: 10px;" type="primary" icon="Plus" @click="handleCreate">
-        添加角色
+        {{ t('role.add_role') }}
       </el-button>
     </div>
 
@@ -21,7 +21,7 @@
     <el-table
       v-loading="listLoading"
       :data="list"
-      element-loading-text="Loading"
+      :element-loading-text="t('common.loading')"
       border
       fit
       highlight-current-row
@@ -32,37 +32,37 @@
         </template>
       </el-table-column>
       
-      <el-table-column label="角色名称" width="300">
+      <el-table-column :label="t('role.role_name')" width="300">
         <template #default="{ row }">
           {{ row.name }}
         </template>
       </el-table-column>
       
-      <el-table-column label="角色代码" width="150">
+      <el-table-column :label="t('role.role_code')" width="150">
         <template #default="{ row }">
           <el-tag>{{ row.code }}</el-tag>
         </template>
       </el-table-column>
       
-      <el-table-column label="描述" width="200">
+      <el-table-column :label="t('role.description')" width="200">
         <template #default="{ row }">
           {{ row.description }}
         </template>
       </el-table-column>
       
-      <el-table-column label="用户数量" width="100" align="center">
+      <el-table-column :label="t('role.user_count')" width="100" align="center">
         <template #default="{ row }">
           <el-tag type="info">{{ row.user_count || 0 }}</el-tag>
         </template>
       </el-table-column>
       
-      <el-table-column align="center" prop="created_at" label="创建时间" width="160">
+      <el-table-column align="center" prop="created_at" :label="t('common.created_at')" width="160">
         <template #default="{ row }">
           <span>{{ formatDate(row.created_at) }}</span>
         </template>
       </el-table-column>
       
-      <el-table-column align="center" label="操作" width="200">
+      <el-table-column align="center" :label="t('common.actions')" width="200">
         <template #default="{ row }">
           <el-button 
             type="primary" 
@@ -70,7 +70,7 @@
             @click="handleUpdate(row)"
             :disabled="row.code === 'admin'"
           >
-            编辑
+            {{ t('common.edit') }}
           </el-button>
           <el-button 
             type="warning" 
@@ -78,7 +78,7 @@
             @click="handlePermission(row)"
             :disabled="row.code === 'admin'"
           >
-            权限
+            {{ t('role.permissions') }}
           </el-button>
           <el-button 
             size="small" 
@@ -86,7 +86,7 @@
             @click="handleDelete(row)"
             :disabled="row.code === 'admin'"
           >
-            删除
+            {{ t('common.delete') }}
           </el-button>
         </template>
       </el-table-column>
@@ -103,7 +103,7 @@
 
     <!-- 添加/编辑对话框 -->
     <el-dialog
-      :title="dialogType === 'create' ? '添加角色' : '编辑角色'"
+      :title="dialogType === 'create' ? t('role.add_role') : t('role.edit_role')"
       v-model="dialogFormVisible"
       width="600px"
     >
@@ -115,15 +115,15 @@
         label-width="100px"
         style="width: 400px; margin-left:50px;"
       >
-        <el-form-item label="角色名称" prop="name">
+        <el-form-item :label="t('role.role_name')" prop="name">
           <el-input v-model="temp.name" />
         </el-form-item>
         
-        <el-form-item label="角色代码" prop="code">
+        <el-form-item :label="t('role.role_code')" prop="code">
           <el-input v-model="temp.code" :disabled="dialogType === 'update'" />
         </el-form-item>
         
-        <el-form-item label="描述" prop="description">
+        <el-form-item :label="t('role.description')" prop="description">
           <el-input v-model="temp.description" type="textarea" rows="3" />
         </el-form-item>
       </el-form>
@@ -131,10 +131,10 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="dialogFormVisible = false">
-            取消
+            {{ t('common.cancel') }}
           </el-button>
           <el-button type="primary" @click="dialogType === 'create' ? createData() : updateData()">
-            确认
+            {{ t('common.confirm') }}
           </el-button>
         </div>
       </template>
@@ -175,6 +175,7 @@ import { getRoleList, createRole, updateRole, deleteRole, getRoleDetail } from '
 import { getPermissionTree, updateRolePermissions } from '@/api/permission'
 import Pagination from '@/components/Pagination/index.vue'
 import dayjs from 'dayjs'
+import { useI18n } from '@/composables/useI18n'
 
 export default {
   name: 'RoleManagement',
@@ -182,6 +183,7 @@ export default {
     Pagination
   },
   setup() {
+    const { t } = useI18n()
     const dataForm = ref()
     const permissionTree = ref()
     
@@ -209,8 +211,8 @@ export default {
     })
 
     const rules = {
-      name: [{ required: true, message: '角色名称是必需的', trigger: 'blur' }],
-      code: [{ required: true, message: '角色代码是必需的', trigger: 'blur' }]
+      name: [{ required: true, message: t('validation.required', { s: t('role.role_name') }), trigger: 'blur' }],
+      code: [{ required: true, message: t('validation.required', { s: t('role.role_code') }), trigger: 'blur' }]
     }
 
     const getList = async () => {

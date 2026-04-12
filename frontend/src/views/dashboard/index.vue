@@ -1,8 +1,8 @@
 <template>
   <div class="dashboard">
     <div class="dashboard-header">
-      <h1>Go Admin 后台管理系统</h1>
-      <p>欢迎使用后台管理系统</p>
+      <h1>{{ t('dashboard.welcome') }}</h1>
+      <p>{{ t('dashboard.welcome_description') }}</p>
     </div>
 
     <!-- 统计卡片 -->
@@ -14,7 +14,7 @@
           </div>
           <div class="stats-content">
             <div class="stats-number">{{ stats.users }}</div>
-            <div class="stats-label">用户总数</div>
+            <div class="stats-label">{{ t('dashboard.total_users') }}</div>
           </div>
         </div>
       </el-col>
@@ -26,7 +26,7 @@
           </div>
           <div class="stats-content">
             <div class="stats-number">{{ stats.roles }}</div>
-            <div class="stats-label">角色总数</div>
+            <div class="stats-label">{{ t('dashboard.total_roles') }}</div>
           </div>
         </div>
       </el-col>
@@ -38,7 +38,7 @@
           </div>
           <div class="stats-content">
             <div class="stats-number">{{ stats.logins }}</div>
-            <div class="stats-label">今日登录</div>
+            <div class="stats-label">{{ t('dashboard.total_logins') }}</div>
           </div>
         </div>
       </el-col>
@@ -50,7 +50,7 @@
           </div>
           <div class="stats-content">
             <div class="stats-number">{{ stats.operations }}</div>
-            <div class="stats-label">今日操作</div>
+            <div class="stats-label">{{ t('dashboard.total_operations') }}</div>
           </div>
         </div>
       </el-col>
@@ -58,33 +58,33 @@
 
     <!-- 快捷入口 -->
     <div class="quick-actions">
-      <h2>快捷操作</h2>
+      <h2>{{ t('dashboard.quick_actions') }}</h2>
       <el-row :gutter="20">
         <el-col :xs="24" :sm="12" :lg="6">
           <div class="action-card" @click="$router.push('/system/user')">
             <el-icon><User /></el-icon>
-            <span>用户管理</span>
+            <span>{{ t('user.user_management') }}</span>
           </div>
         </el-col>
         
         <el-col :xs="24" :sm="12" :lg="6">
           <div class="action-card" @click="$router.push('/system/role')">
             <el-icon><UserFilled /></el-icon>
-            <span>角色管理</span>
+            <span>{{ t('role.role_management') }}</span>
           </div>
         </el-col>
         
         <el-col :xs="24" :sm="12" :lg="6">
           <div class="action-card" @click="$router.push('/log/login')">
             <el-icon><Key /></el-icon>
-            <span>登录日志</span>
+            <span>{{ t('log.login_log') }}</span>
           </div>
         </el-col>
         
         <el-col :xs="24" :sm="12" :lg="6">
           <div class="action-card" @click="$router.push('/log/operation')">
             <el-icon><Document /></el-icon>
-            <span>操作日志</span>
+            <span>{{ t('log.operation_log') }}</span>
           </div>
         </el-col>
       </el-row>
@@ -92,27 +92,27 @@
 
     <!-- 系统信息 -->
     <div class="system-info">
-      <h2>系统信息</h2>
+      <h2>{{ t('dashboard.system_info') }}</h2>
       <el-row :gutter="20">
         <el-col :span="12">
           <el-card>
             <template #header>
-              <span>服务器信息</span>
+              <span>{{ t('dashboard.server_info') }}</span>
             </template>
             <div class="info-item">
-              <span>操作系统:</span>
+              <span>{{ t('dashboard.os') }}:</span>
               <span>{{ systemInfo.os }}</span>
             </div>
             <div class="info-item">
-              <span>Go版本:</span>
+              <span>{{ t('dashboard.go_version') }}:</span>
               <span>{{ systemInfo.goVersion }}</span>
             </div>
             <div class="info-item">
-              <span>运行时间:</span>
+              <span>{{ t('dashboard.uptime') }}:</span>
               <span>{{ systemInfo.uptime }}</span>
             </div>
             <div class="info-item">
-              <span>内存使用:</span>
+              <span>{{ t('dashboard.memory_usage') }}:</span>
               <span>{{ systemInfo.memory }}</span>
             </div>
           </el-card>
@@ -121,22 +121,22 @@
         <el-col :span="12">
           <el-card>
             <template #header>
-              <span>项目信息</span>
+              <span>{{ t('dashboard.project_info') }}</span>
             </template>
             <div class="info-item">
-              <span>项目名称:</span>
+              <span>{{ t('dashboard.project_name') }}:</span>
               <span>Go Admin</span>
             </div>
             <div class="info-item">
-              <span>项目版本:</span>
+              <span>{{ t('dashboard.project_version') }}:</span>
               <span>v1.0.0</span>
             </div>
             <div class="info-item">
-              <span>技术栈:</span>
+              <span>{{ t('dashboard.tech_stack') }}:</span>
               <span>Go + Gin + Vue3 + Element Plus</span>
             </div>
             <div class="info-item">
-              <span>更新时间:</span>
+              <span>{{ t('dashboard.update_time') }}:</span>
               <span>{{ new Date().toLocaleDateString() }}</span>
             </div>
           </el-card>
@@ -146,53 +146,41 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, reactive, onMounted } from 'vue'
 import { User, UserFilled, Key, Document } from '@element-plus/icons-vue'
+import { useI18n } from '@/composables/useI18n'
 
-export default {
-  name: 'Dashboard',
-  components: {
-    User,
-    UserFilled,
-    Key,
-    Document
-  },
-  setup() {
-    const stats = reactive({
-      users: 0,
-      roles: 0,
-      logins: 0,
-      operations: 0
-    })
+const { t } = useI18n()
 
-    const systemInfo = reactive({
-      os: 'Linux',
-      goVersion: 'Go 1.21',
-      uptime: '15天 6小时',
-      memory: '256MB / 2GB'
-    })
+const stats = reactive({
+  users: 0,
+  roles: 0,
+  logins: 0,
+  operations: 0
+})
 
-    // 模拟加载统计数据
-    const loadStats = () => {
-      // 这里应该调用实际的API
-      setTimeout(() => {
-        stats.users = 128
-        stats.roles = 8
-        stats.logins = 45
-        stats.operations = 156
-      }, 1000)
-    }
+const systemInfo = reactive({
+  os: 'Linux',
+  goVersion: 'Go 1.21',
+  uptime: '15天 6小时',
+  memory: '256MB / 2GB'
+})
 
-    onMounted(() => {
-      loadStats()
-    })
-
-    return {
-      stats,
-      systemInfo
-    }
-  }
+// 模拟加载统计数据
+const loadStats = () => {
+  // 这里应该调用实际的API
+  setTimeout(() => {
+    stats.users = 128
+    stats.roles = 8
+    stats.logins = 45
+    stats.operations = 156
+  }, 1000)
 }
+
+onMounted(() => {
+  loadStats()
+})
 </script>
 
 <style lang="scss" scoped>

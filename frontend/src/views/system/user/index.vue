@@ -4,23 +4,23 @@
     <div class="filter-container">
       <el-input
         v-model="listQuery.username"
-        placeholder="请输入用户名"
+        :placeholder="t('user.please_enter_username')"
         style="width: 150px;"
         class="filter-item"
         @keyup.enter="handleFilter"
       />
       <el-input
         v-model="listQuery.email"
-        placeholder="请输入邮箱"
+        :placeholder="t('user.please_enter_email')"
         style="width: 150px;"
         class="filter-item"
         @keyup.enter="handleFilter"
       />
-      <el-select v-model="listQuery.status" placeholder="状态" clearable style="width: 120px" class="filter-item">
-        <el-option label="启用" :value="1" />
-        <el-option label="禁用" :value="0" />
+      <el-select v-model="listQuery.status" :placeholder="t('user.status')" clearable style="width: 120px" class="filter-item">
+        <el-option :label="t('common.enabled')" :value="1" />
+        <el-option :label="t('common.disabled')" :value="0" />
       </el-select>
-      <el-select v-model="listQuery.role_id" placeholder="角色" clearable style="width: 120px" class="filter-item">
+      <el-select v-model="listQuery.role_id" :placeholder="t('user.role')" clearable style="width: 120px" class="filter-item">
         <el-option
           v-for="role in roleList"
           :key="role.id"
@@ -29,13 +29,13 @@
         />
       </el-select>
       <el-button class="filter-item" type="primary" icon="Search" @click="handleFilter">
-        搜索
+        {{ t('common.search') }}
       </el-button>
       <el-button class="filter-item" type="default" icon="Refresh" @click="resetFilter">
-        重置
+        {{ t('common.reset') }}
       </el-button>
       <el-button class="filter-item" style="margin-left: 10px;" type="primary" icon="Plus" @click="handleCreate">
-        添加用户
+        {{ t('user.add_user') }}
       </el-button>
     </div>
 
@@ -43,7 +43,7 @@
     <el-table
       v-loading="listLoading"
       :data="list"
-      element-loading-text="Loading"
+      :element-loading-text="t('common.loading')"
       border
       fit
       highlight-current-row
@@ -54,19 +54,20 @@
         </template>
       </el-table-column>
       
-      <el-table-column label="用户名" prop="username">
+      <el-table-column :label="t('user.username')" prop="username">
         <template #default="{ row }">
           {{ row.username }}
-          <el-tag v-if="row.is_super_admin" type="danger" size="small" effect="dark" style="margin-left: 8px;">超级管理员</el-tag>
+          <el-tag v-if="row.is_super_admin" type="danger" size="small" effect="dark" style="margin-left: 8px;">
+            {{ t('user.super_admin') }}
+          </el-tag>
         </template>
       </el-table-column>
       
-      <el-table-column label="邮箱" prop="email" />
+      <el-table-column :label="t('user.email')" prop="email" />
       
-      <el-table-column label="昵称" prop="nickname" />
-
+      <el-table-column :label="t('user.nickname')" prop="nickname" />
       
-      <el-table-column label="角色" width="120">
+      <el-table-column :label="t('user.role')" width="120">
         <template #default="{ row }">
           <el-tag v-for="role in row.roles" :key="role.id" size="small" style="margin-right: 5px;">
             {{ role.name }}
@@ -74,30 +75,30 @@
         </template>
       </el-table-column>
       
-      <el-table-column label="状态" prop="status">
+      <el-table-column :label="t('user.status')" prop="status">
         <template #default="{ row }">
           <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-            {{ row.status === 1 ? '启用' : '禁用' }}
+            {{ row.status === 1 ? t('common.enabled') : t('common.disabled') }}
           </el-tag>
         </template>
       </el-table-column>
       
-      <el-table-column align="center" prop="created_at" label="创建时间" width="160">
+      <el-table-column align="center" prop="created_at" :label="t('user.created_at')" width="160">
         <template #default="{ row }">
           <span>{{ formatDate(row.created_at) }}</span>
         </template>
       </el-table-column>
       
-      <el-table-column align="center" label="操作" width="250">
+      <el-table-column align="center" :label="t('common.actions')" width="250">
         <template #default="{ row }">
           <!-- 如果是超级管理员，只显示标签 -->
           <template v-if="row.is_super_admin">
-            <el-tag type="warning">超级管理员账户</el-tag>
+            <el-tag type="warning">{{ t('user.super_admin_account') }}</el-tag>
           </template>
           <!-- 非超级管理员显示操作按钮 -->
           <template v-else>
             <el-button type="primary" size="small" @click="handleUpdate(row)">
-              编辑
+              {{ t('common.edit') }}
             </el-button>
             <el-button
               v-if="row.status === 1"
@@ -105,7 +106,7 @@
               type="warning"
               @click="handleModifyStatus(row, 0)"
             >
-              禁用
+              {{ t('common.disabled') }}
             </el-button>
             <el-button
               v-else
@@ -113,10 +114,10 @@
               type="success"
               @click="handleModifyStatus(row, 1)"
             >
-              启用
+              {{ t('common.enabled') }}
             </el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">
-              删除
+              {{ t('common.delete') }}
             </el-button>
           </template>
         </template>
@@ -134,7 +135,7 @@
 
     <!-- 添加/编辑对话框 -->
     <el-dialog
-      :title="dialogType === 'create' ? '添加用户' : '编辑用户'"
+      :title="dialogType === 'create' ? t('user.add_user') : t('user.edit_user')"
       v-model="dialogFormVisible"
       width="600px"
     >
@@ -146,35 +147,34 @@
         label-width="100px"
         style="width: 400px; margin-left:50px;"
       >
-        <el-form-item label="用户名" prop="username">
+        <el-form-item :label="t('user.username')" prop="username">
           <el-input v-model="temp.username" :disabled="dialogType === 'update'" />
         </el-form-item>
         
-        <el-form-item v-if="dialogType === 'create'" label="密码" prop="password">
+        <el-form-item v-if="dialogType === 'create'" :label="t('user.password')" prop="password">
           <el-input v-model="temp.password" type="password" show-password />
         </el-form-item>
         
-        <el-form-item label="邮箱" prop="email">
+        <el-form-item :label="t('user.email')" prop="email">
           <el-input v-model="temp.email" />
         </el-form-item>
         
-        <el-form-item label="昵称" prop="nickname">
+        <el-form-item :label="t('user.nickname')" prop="nickname">
           <el-input v-model="temp.nickname" />
         </el-form-item>
         
-        
-        <el-form-item label="状态" prop="status">
-          <el-select v-model="temp.status" placeholder="请选择">
-            <el-option label="启用" :value="1" />
-            <el-option label="禁用" :value="0" />
+        <el-form-item :label="t('user.status')" prop="status">
+          <el-select v-model="temp.status" :placeholder="t('common.please_select')">
+            <el-option :label="t('common.enabled')" :value="1" />
+            <el-option :label="t('common.disabled')" :value="0" />
           </el-select>
         </el-form-item>
         
-        <el-form-item label="角色" prop="role_ids">
+        <el-form-item :label="t('user.role')" prop="role_ids">
           <el-select
             v-model="temp.role_ids"
             multiple
-            placeholder="请选择角色"
+            :placeholder="t('user.please_select_role')"
             style="width: 100%"
           >
             <el-option
@@ -191,10 +191,10 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="dialogFormVisible = false">
-            取消
+            {{ t('common.cancel') }}
           </el-button>
           <el-button type="primary" @click="dialogType === 'create' ? createData() : updateData()">
-            确认
+            {{ t('common.confirm') }}
           </el-button>
         </div>
       </template>
@@ -209,6 +209,7 @@ import { getUserList, createUser, updateUser, deleteUser, updateUserStatus, upda
 import { getRoleList } from '@/api/role'
 import Pagination from '@/components/Pagination/index.vue'
 import dayjs from 'dayjs'
+import { useI18n } from '@/composables/useI18n'
 
 export default {
   name: 'UserManagement',
@@ -216,6 +217,7 @@ export default {
     Pagination
   },
   setup() {
+    const { t } = useI18n()
     const dataForm = ref()
     
     const list = ref([])
@@ -246,13 +248,13 @@ export default {
     })
     
     const rules = {
-      username: [{ required: true, message: '用户名不能为空', trigger: 'blur' }],
-      password: [{ required: true, message: '密码不能为空', trigger: 'blur' }],
+      username: [{ required: true, message: t('validation.required', { s: t('user.username') }), trigger: 'blur' }],
+      password: [{ required: true, message: t('validation.required', { s: t('user.password') }), trigger: 'blur' }],
       email: [
-        { required: true, message: '邮箱不能为空', trigger: 'blur' },
-        { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
+        { required: true, message: t('validation.required', { s: t('user.email') }), trigger: 'blur' },
+        { type: 'email', message: t('validation.invalid_email'), trigger: 'blur' }
       ],
-      role_ids: [{ required: true, message: '请至少选择一个角色', trigger: 'change' }]
+      role_ids: [{ required: true, message: t('validation.required', { s: t('user.role') }), trigger: 'change' }]
     }
 
     const getList = async () => {
@@ -440,6 +442,7 @@ export default {
     })
 
     return {
+      t,
       list,
       total,
       listLoading,

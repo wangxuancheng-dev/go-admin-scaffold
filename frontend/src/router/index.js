@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import NProgress from 'nprogress'
+import i18n from '@/i18n'
 
 // 导入布局组件
 import Layout from '@/layout/index.vue'
@@ -11,7 +12,7 @@ export const constantRoutes = [
     path: '/login',
     name: 'Login',
     component: () => import('@/views/login/index.vue'),
-    meta: { title: '登录', hidden: true }
+    meta: { title: i18n.global.t('auth.login'), hidden: true }
   },
   {
     path: '/404',
@@ -28,7 +29,7 @@ export const constantRoutes = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/dashboard/index.vue'),
-        meta: { title: '仪表盘', icon: 'Odometer', affix: true }
+        meta: { title: i18n.global.t('dashboard.dashboard'), icon: 'House', affix: true }
       }
     ]
   }
@@ -40,31 +41,31 @@ export const asyncRoutes = [
     path: '/system',
     component: Layout,
     name: 'System',
-    meta: { title: '系统管理', icon: 'Setting' },
+    meta: { title: i18n.global.t('system.system_management'), icon: 'Setting' },
     children: [
       {
         path: 'user',
         name: 'User',
         component: () => import('@/views/system/user/index.vue'),
-        meta: { title: '用户管理', icon: 'User', permission: 'user:view' }
+        meta: { title: i18n.global.t('user.user_management'), icon: 'User', permission: 'user:view' }
       },
       {
         path: 'role',
         name: 'Role',
         component: () => import('@/views/system/role/index.vue'),
-        meta: { title: '角色管理', icon: 'UserFilled', permission: 'role:view' }
+        meta: { title: i18n.global.t('role.role_management'), icon: 'UserFilled', permission: 'role:view' }
       },
       {
         path: 'permission',
         name: 'Permission',
         component: () => import('@/views/system/permission/index.vue'),
-        meta: { title: '权限管理', icon: 'Key', permission: 'permission:view' }
+        meta: { title: i18n.global.t('permission.permission_management'), icon: 'Key', permission: 'permission:view' }
       },
       {
         path: 'menu',
         name: 'Menu',
         component: () => import('@/views/system/menu/index.vue'),
-        meta: { title: '菜单管理', icon: 'Menu', permission: 'menu:view' }
+        meta: { title: i18n.global.t('menu.menu_management'), icon: 'Menu', permission: 'menu:view' }
       }
     ]
   },
@@ -72,19 +73,19 @@ export const asyncRoutes = [
     path: '/log',
     component: Layout,
     name: 'Log',
-    meta: { title: '日志管理', icon: 'Document' },
+    meta: { title: i18n.global.t('log.log_management'), icon: 'Document' },
     children: [
       {
         path: 'login',
         name: 'LoginLog',
         component: () => import('@/views/log/login/index.vue'),
-        meta: { title: '登录日志', icon: 'Key', permission: 'log:view' }
+        meta: { title: i18n.global.t('log.login_log'), icon: 'Key', permission: 'log:view' }
       },
       {
         path: 'operation',
         name: 'OperationLog',
         component: () => import('@/views/log/operation/index.vue'),
-        meta: { title: '操作日志', icon: 'Document', permission: 'log:view' }
+        meta: { title: i18n.global.t('log.operation_log'), icon: 'Document', permission: 'log:view' }
       }
     ]
   },
@@ -97,7 +98,7 @@ export const asyncRoutes = [
         path: '',
         name: 'Profile',
         component: () => import('@/views/profile/index.vue'),
-        meta: { title: '个人中心', icon: 'User' }
+        meta: { title: i18n.global.t('profile.profile'), icon: 'User' }
       }
     ]
   }
