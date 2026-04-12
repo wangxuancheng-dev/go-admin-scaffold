@@ -36,8 +36,8 @@ var (
 
 // RedisQueue implements QueueInterface using Redis Streams (XADD / XREADGROUP / XACK) plus a ZSET for delayed jobs.
 type RedisQueue struct {
-	client         *redis.Client
-	config         Config
+	client          *redis.Client
+	config          Config
 	group           string
 	defaultConsumer string
 }

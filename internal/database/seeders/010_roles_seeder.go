@@ -12,7 +12,7 @@ func init() {
 		Name:        "roles",
 		Description: "Create default roles",
 		Run: func(tx *gorm.DB) error {
-			roles := []map[string]interface{}{
+			roles := []map[string]any{
 				{
 					"name":        "Administrator",
 					"code":        "admin",

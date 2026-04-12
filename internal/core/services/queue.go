@@ -27,7 +27,7 @@ func NewQueueService(cfg *config.Config) (*QueueService, error) {
 
 	qc := queue.Config{
 		Driver:  cfg.Queue.Driver,
-		Options: make(map[string]interface{}),
+		Options: make(map[string]any),
 	}
 
 	switch cfg.Queue.Driver {
