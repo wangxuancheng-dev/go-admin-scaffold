@@ -8,10 +8,8 @@ import (
 
 	"app/internal/config"
 	"app/internal/core/jobs"
+	"app/pkg/database"
 	"app/pkg/queue"
-
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -21,10 +19,17 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// 初始化数据库连接
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.Database.Username, cfg.Database.Password, cfg.Database.Host, cfg.Database.Port, cfg.Database.Database)
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := database.OpenGorm(database.GormOpenConfig{
+		Driver:   cfg.Database.Driver,
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		Username: cfg.Database.Username,
+		Password: cfg.Database.Password,
+		Database: cfg.Database.Database,
+		Charset:  cfg.Database.Charset,
+		SSLMode:  cfg.Database.SSLMode,
+		TimeZone: cfg.Database.TimeZone,
+	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -33,7 +38,7 @@ func main() {
 	redisConfig := queue.Config{
 		Driver: "redis",
 		Options: map[string]interface{}{
-			"connection": fmt.Sprintf("redis://%s:%d/%d", cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB),
+			"connection": fmt.Sprintf("redis://%s:%s/%d", cfg.Redis.Host, cfg.Redis.Port, cfg.Redis.DB),
 			"queue":      "default",
 		},
 	}

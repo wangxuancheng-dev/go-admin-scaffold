@@ -4,6 +4,7 @@ import (
 	"app/internal/core/models"
 	"app/internal/core/services"
 	"app/pkg/captcha"
+	"app/pkg/ginext"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -37,7 +38,10 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	authSvc := c.MustGet("authService").(*services.AuthService)
+	authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
+	if !ok {
+		return
+	}
 	resp, err := authSvc.Login(c.Request.Context(), &req)
 	if err != nil {
 		if err == services.ErrInvalidCredentials {
@@ -65,7 +69,10 @@ func RefreshToken(c *gin.Context) {
 	}
 
 	userModel := user.(*models.User)
-	authSvc := c.MustGet("authService").(*services.AuthService)
+	authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
+	if !ok {
+		return
+	}
 	token, err := authSvc.RefreshToken(c.Request.Context(), userModel.ID)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to refresh token")
@@ -89,7 +96,10 @@ func Logout(c *gin.Context) {
 	}
 
 	userModel := user.(*models.User)
-	authSvc := c.MustGet("authService").(*services.AuthService)
+	authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
+	if !ok {
+		return
+	}
 
 	// Log the logout action
 	err := authSvc.Logout(c.Request.Context(), userModel.ID)

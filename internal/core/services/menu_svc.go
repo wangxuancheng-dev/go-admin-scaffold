@@ -32,12 +32,24 @@ type MenuRepository interface {
 type MenuService struct {
 	menuRepo MenuRepository
 	userRepo UserRepository
+	permInv  PermissionCacheInvalidator
 }
 
 func NewMenuService(menuRepo MenuRepository, userRepo UserRepository) *MenuService {
 	return &MenuService{
 		menuRepo: menuRepo,
 		userRepo: userRepo,
+	}
+}
+
+// SetPermissionCacheInvalidator wires RBAC permission cache invalidation (optional).
+func (s *MenuService) SetPermissionCacheInvalidator(p PermissionCacheInvalidator) {
+	s.permInv = p
+}
+
+func (s *MenuService) invalidateAllPermissions(ctx context.Context) {
+	if s.permInv != nil {
+		s.permInv.InvalidateAllPermissions(ctx)
 	}
 }
 
@@ -135,6 +147,7 @@ func (s *MenuService) Create(ctx context.Context, req *CreateMenuRequest) (*mode
 		}
 	}
 
+	s.invalidateAllPermissions(ctx)
 	return s.menuRepo.FindByID(ctx, menu.ID)
 }
 
@@ -184,6 +197,7 @@ func (s *MenuService) Update(ctx context.Context, id uint, req *UpdateMenuReques
 		}
 	}
 
+	s.invalidateAllPermissions(ctx)
 	return s.menuRepo.FindByID(ctx, menu.ID)
 }
 
@@ -198,7 +212,11 @@ func (s *MenuService) Delete(ctx context.Context, id uint) error {
 		return ErrMenuHasChildren
 	}
 
-	return s.menuRepo.Delete(ctx, id)
+	if err := s.menuRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.invalidateAllPermissions(ctx)
+	return nil
 }
 
 // GetByID gets a menu by ID
@@ -474,7 +492,11 @@ func (s *MenuService) UpdateMenuRoles(ctx context.Context, menuID uint, roleIDs 
 		return ErrMenuNotFound
 	}
 
-	return s.menuRepo.UpdateMenuRoles(ctx, menuID, roleIDs)
+	if err := s.menuRepo.UpdateMenuRoles(ctx, menuID, roleIDs); err != nil {
+		return err
+	}
+	s.invalidateAllPermissions(ctx)
+	return nil
 }
 
 func (s *MenuService) metaToString(meta models.MenuMeta) string {

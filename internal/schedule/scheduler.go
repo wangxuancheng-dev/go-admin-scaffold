@@ -3,12 +3,12 @@ package schedule
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"app/pkg/console"
 	"app/pkg/locker"
+	"app/pkg/logger"
 
 	"github.com/robfig/cron/v3"
 )
@@ -73,7 +73,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		task := task // Create new variable for closure
 		_, err := s.cron.AddFunc(task.Schedule, func() {
 			if err := s.runTask(ctx, task); err != nil {
-				log.Printf("Error running task %s: %v\n", task.Name, err)
+				logger.Sugared().Errorw("scheduler task failed", "task", task.Name, "error", err)
 			}
 		})
 		if err != nil {
@@ -104,15 +104,14 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) error {
 	}
 
 	if !acquired {
-		// Another instance is running this task
-		log.Printf("Task %s is already running on another instance", task.Name)
+		logger.Sugared().Infow("scheduler task skipped, lock held elsewhere", "task", task.Name)
 		return nil
 	}
 
 	// Run the task and ensure we release the lock afterward
 	defer func() {
 		if err := s.locker.Unlock(ctx, lockKey); err != nil {
-			log.Printf("Failed to release lock for task %s: %v", task.Name, err)
+			logger.Sugared().Warnw("scheduler lock release failed", "task", task.Name, "error", err)
 		}
 	}()
 

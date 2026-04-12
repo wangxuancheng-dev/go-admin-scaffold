@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"app/internal/core/services"
+	"app/pkg/ginext"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -18,8 +19,10 @@ func RBAC(permission string) gin.HandlerFunc {
 			return
 		}
 
-		// Get RBAC service
-		rbacSvc := c.MustGet("rbacService").(*services.RBACService)
+		rbacSvc, ok := ginext.GetService[*services.RBACService](c, "rbacService")
+		if !ok {
+			return
+		}
 
 		// Check if user has permission
 		hasPermission, err := rbacSvc.CheckPermission(c.Request.Context(), user, permission)

@@ -29,51 +29,28 @@ func init() {
 			DeletedAt  gorm.DeletedAt `gorm:"index;type:timestamp"`
 		}
 
-		// Create menus table
 		if err := tx.AutoMigrate(&Menu{}); err != nil {
 			return err
 		}
 
-		// Add indexes
-		var count int64
-
-		// Check and create idx_menus_parent_id
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'menus' AND index_name = 'idx_menus_parent_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_menus_parent_id ON menus(parent_id)").Error; err != nil {
+		for _, pair := range []struct {
+			name   string
+			create string
+		}{
+			{"idx_menus_parent_id", "CREATE INDEX idx_menus_parent_id ON menus(parent_id)"},
+			{"idx_menus_status", "CREATE INDEX idx_menus_status ON menus(status)"},
+			{"idx_menus_sort", "CREATE INDEX idx_menus_sort ON menus(sort)"},
+			{"idx_menus_type", "CREATE INDEX idx_menus_type ON menus(type)"},
+			{"idx_menus_visible", "CREATE INDEX idx_menus_visible ON menus(visible)"},
+		} {
+			ok, err := indexExists(tx, "menus", pair.name)
+			if err != nil {
 				return err
 			}
-		}
-
-		// Check and create idx_menus_status
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'menus' AND index_name = 'idx_menus_status'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_menus_status ON menus(status)").Error; err != nil {
-				return err
-			}
-		}
-
-		// Check and create idx_menus_sort
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'menus' AND index_name = 'idx_menus_sort'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_menus_sort ON menus(sort)").Error; err != nil {
-				return err
-			}
-		}
-
-		// Check and create idx_menus_type
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'menus' AND index_name = 'idx_menus_type'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_menus_type ON menus(type)").Error; err != nil {
-				return err
-			}
-		}
-
-		// Check and create idx_menus_visible
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'menus' AND index_name = 'idx_menus_visible'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_menus_visible ON menus(visible)").Error; err != nil {
-				return err
+			if !ok {
+				if err := tx.Exec(pair.create).Error; err != nil {
+					return err
+				}
 			}
 		}
 
@@ -81,22 +58,15 @@ func init() {
 	}
 
 	down := func(tx *gorm.DB) error {
-		// Drop indexes first
-		indexes := []string{
+		for _, idx := range []string{
 			"idx_menus_parent_id",
 			"idx_menus_status",
 			"idx_menus_sort",
 			"idx_menus_type",
 			"idx_menus_visible",
+		} {
+			dropIndexBestEffort(tx, "menus", idx)
 		}
-
-		for _, idx := range indexes {
-			if err := tx.Exec("ALTER TABLE menus DROP INDEX " + idx).Error; err != nil {
-				// Ignore error if index doesn't exist
-			}
-		}
-
-		// Drop table
 		return tx.Migrator().DropTable("menus")
 	}
 

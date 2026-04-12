@@ -1,7 +1,6 @@
 package migrations
 
 import (
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -9,7 +8,6 @@ import (
 
 func init() {
 	up := func(tx *gorm.DB) error {
-		// Login logs table
 		type LoginLog struct {
 			ID        uint           `gorm:"primarykey"`
 			UserID    uint           `gorm:"index;comment:'用户ID'"`
@@ -24,7 +22,6 @@ func init() {
 			DeletedAt gorm.DeletedAt `gorm:"index;type:timestamp"`
 		}
 
-		// Operation logs table
 		type OperationLog struct {
 			ID            uint           `gorm:"primarykey"`
 			UserID        uint           `gorm:"index;comment:'用户ID'"`
@@ -49,7 +46,6 @@ func init() {
 			DeletedAt     gorm.DeletedAt `gorm:"index;type:timestamp"`
 		}
 
-		// Set table names and create tables
 		if err := tx.Set("gorm:table_options", "").Table("login_logs").AutoMigrate(&LoginLog{}); err != nil {
 			return err
 		}
@@ -57,34 +53,26 @@ func init() {
 			return err
 		}
 
-		// Add indexes for login_logs (check if they exist first)
-		var count int64
-
-		// Check and create idx_login_logs_login_time
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'login_logs' AND index_name = 'idx_login_logs_login_time'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_login_logs_login_time ON login_logs(login_time)").Error; err != nil {
+		for _, pair := range []struct {
+			table  string
+			name   string
+			create string
+		}{
+			{"login_logs", "idx_login_logs_login_time", "CREATE INDEX idx_login_logs_login_time ON login_logs(login_time)"},
+			{"login_logs", "idx_login_logs_status", "CREATE INDEX idx_login_logs_status ON login_logs(status)"},
+			{"login_logs", "idx_login_logs_user_id", "CREATE INDEX idx_login_logs_user_id ON login_logs(user_id)"},
+		} {
+			ok, err := indexExists(tx, pair.table, pair.name)
+			if err != nil {
 				return err
+			}
+			if !ok {
+				if err := tx.Exec(pair.create).Error; err != nil {
+					return err
+				}
 			}
 		}
 
-		// Check and create idx_login_logs_status
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'login_logs' AND index_name = 'idx_login_logs_status'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_login_logs_status ON login_logs(status)").Error; err != nil {
-				return err
-			}
-		}
-
-		// Check and create idx_login_logs_user_id
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'login_logs' AND index_name = 'idx_login_logs_user_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_login_logs_user_id ON login_logs(user_id)").Error; err != nil {
-				return err
-			}
-		}
-
-		// Add indexes for operation_logs (check if they exist first)
 		indexQueries := []struct {
 			name  string
 			query string
@@ -98,8 +86,11 @@ func init() {
 		}
 
 		for _, idx := range indexQueries {
-			tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'operation_logs' AND index_name = ?", idx.name).Scan(&count)
-			if count == 0 {
+			ok, err := indexExists(tx, "operation_logs", idx.name)
+			if err != nil {
+				return err
+			}
+			if !ok {
 				if err := tx.Exec(idx.query).Error; err != nil {
 					return err
 				}
@@ -110,29 +101,23 @@ func init() {
 	}
 
 	down := func(tx *gorm.DB) error {
-		// Drop indexes first (MySQL compatible syntax)
-		indexes := []string{
-			"idx_login_logs_login_time",
-			"idx_login_logs_status",
-			"idx_login_logs_user_id",
-			"idx_operation_logs_operation_time",
-			"idx_operation_logs_module",
-			"idx_operation_logs_action",
-			"idx_operation_logs_status",
-			"idx_operation_logs_user_id",
-			"idx_operation_logs_business_type",
+		for _, pair := range []struct {
+			table string
+			index string
+		}{
+			{"login_logs", "idx_login_logs_login_time"},
+			{"login_logs", "idx_login_logs_status"},
+			{"login_logs", "idx_login_logs_user_id"},
+			{"operation_logs", "idx_operation_logs_operation_time"},
+			{"operation_logs", "idx_operation_logs_module"},
+			{"operation_logs", "idx_operation_logs_action"},
+			{"operation_logs", "idx_operation_logs_status"},
+			{"operation_logs", "idx_operation_logs_user_id"},
+			{"operation_logs", "idx_operation_logs_business_type"},
+		} {
+			dropIndexBestEffort(tx, pair.table, pair.index)
 		}
 
-		for _, idx := range indexes {
-			tableName := tableNameFromIndex(idx)
-			if tableName != "" {
-				if err := tx.Exec("ALTER TABLE " + tableName + " DROP INDEX " + idx).Error; err != nil {
-					// Ignore error if index doesn't exist
-				}
-			}
-		}
-
-		// Drop tables
 		if err := tx.Migrator().DropTable("login_logs"); err != nil {
 			return err
 		}
@@ -140,15 +125,4 @@ func init() {
 	}
 
 	Register("create_logs_tables", NewMigration("20240310_create_logs_tables.go", up, down))
-}
-
-// tableNameFromIndex returns the table name from an index name
-func tableNameFromIndex(indexName string) string {
-	if len(indexName) > 4 && indexName[:4] == "idx_" {
-		parts := strings.Split(indexName[4:], "_")
-		if len(parts) >= 2 {
-			return parts[0] + "_" + parts[1]
-		}
-	}
-	return ""
 }

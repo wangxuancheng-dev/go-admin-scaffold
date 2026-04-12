@@ -12,42 +12,43 @@ func init() {
 			RoleID uint `gorm:"not null"`
 		}
 
-		// Create user_roles table
 		if err := tx.AutoMigrate(&UserRole{}); err != nil {
 			return err
 		}
 
-		// Add indexes (check if they exist first)
-		var count int64
-
-		// Check and create idx_user_roles_user_id
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'user_roles' AND index_name = 'idx_user_roles_user_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_user_roles_user_id ON user_roles(user_id)").Error; err != nil {
+		for _, pair := range []struct {
+			name   string
+			create string
+		}{
+			{"idx_user_roles_user_id", "CREATE INDEX idx_user_roles_user_id ON user_roles(user_id)"},
+			{"idx_user_roles_role_id", "CREATE INDEX idx_user_roles_role_id ON user_roles(role_id)"},
+		} {
+			ok, err := indexExists(tx, "user_roles", pair.name)
+			if err != nil {
 				return err
+			}
+			if !ok {
+				if err := tx.Exec(pair.create).Error; err != nil {
+					return err
+				}
 			}
 		}
 
-		// Check and create idx_user_roles_role_id
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'user_roles' AND index_name = 'idx_user_roles_role_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_user_roles_role_id ON user_roles(role_id)").Error; err != nil {
+		for _, fk := range []struct {
+			name string
+			sql  string
+		}{
+			{"fk_user_roles_user_id", "ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"},
+			{"fk_user_roles_role_id", "ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_role_id FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE"},
+		} {
+			ok, err := fkConstraintExists(tx, "user_roles", fk.name)
+			if err != nil {
 				return err
 			}
-		}
-
-		// Add foreign key constraints (check if they exist first)
-		tx.Raw("SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema = DATABASE() AND table_name = 'user_roles' AND constraint_name = 'fk_user_roles_user_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE").Error; err != nil {
-				return err
-			}
-		}
-
-		tx.Raw("SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema = DATABASE() AND table_name = 'user_roles' AND constraint_name = 'fk_user_roles_role_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("ALTER TABLE user_roles ADD CONSTRAINT fk_user_roles_role_id FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE").Error; err != nil {
-				return err
+			if !ok {
+				if err := tx.Exec(fk.sql).Error; err != nil {
+					return err
+				}
 			}
 		}
 
@@ -55,23 +56,10 @@ func init() {
 	}
 
 	down := func(tx *gorm.DB) error {
-		// Drop foreign keys first (MySQL compatible syntax)
-		if err := tx.Exec("ALTER TABLE user_roles DROP FOREIGN KEY fk_user_roles_user_id").Error; err != nil {
-			// Ignore error if foreign key doesn't exist
-		}
-		if err := tx.Exec("ALTER TABLE user_roles DROP FOREIGN KEY fk_user_roles_role_id").Error; err != nil {
-			// Ignore error if foreign key doesn't exist
-		}
-
-		// Drop indexes (MySQL compatible syntax)
-		if err := tx.Exec("ALTER TABLE user_roles DROP INDEX idx_user_roles_user_id").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-		if err := tx.Exec("ALTER TABLE user_roles DROP INDEX idx_user_roles_role_id").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-
-		// Drop table
+		dropForeignKeyBestEffort(tx, "user_roles", "fk_user_roles_user_id")
+		dropForeignKeyBestEffort(tx, "user_roles", "fk_user_roles_role_id")
+		dropIndexBestEffort(tx, "user_roles", "idx_user_roles_user_id")
+		dropIndexBestEffort(tx, "user_roles", "idx_user_roles_role_id")
 		return tx.Migrator().DropTable("user_roles")
 	}
 

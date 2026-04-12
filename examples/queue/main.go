@@ -6,13 +6,18 @@ import (
 	"log"
 	"time"
 
+	"app/internal/config"
 	"app/internal/core/jobs"
 	"app/internal/core/services"
 )
 
 func main() {
-	// 创建队列服务
-	queueService, err := services.NewQueueService()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+
+	queueService, err := services.NewQueueService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create queue service: %v", err)
 	}

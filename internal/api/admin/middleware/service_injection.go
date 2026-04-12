@@ -5,6 +5,7 @@ import (
 	"app/internal/core/repositories"
 	"app/internal/core/services"
 	"app/pkg/database"
+	"app/pkg/redis"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +29,7 @@ func ServiceInjection(cfg *config.Config) gin.HandlerFunc {
 		userSvc := services.NewUserService(userRepo, logSvc, cfg)
 		authSvc := services.NewAuthService(userRepo, logSvc, cfg)
 		rbacSvc := services.NewRBACService(db)
+		rbacSvc.SetRedisClient(redis.GetClient())
 		roleSvc := services.NewRoleService(db)
 		todoService := services.NewTodoService(todoRepo)
 		menuSvc := services.NewMenuService(menuRepo, userRepo)
@@ -35,6 +37,9 @@ func ServiceInjection(cfg *config.Config) gin.HandlerFunc {
 		// Set up service dependencies
 		userSvc.SetAuthService(authSvc)
 		rbacSvc.SetAuthService(authSvc)
+		menuSvc.SetPermissionCacheInvalidator(rbacSvc)
+		roleSvc.SetPermissionCacheInvalidator(rbacSvc)
+		userSvc.SetPermissionCacheInvalidator(rbacSvc)
 
 		// Inject services into context
 		c.Set("logService", logSvc)

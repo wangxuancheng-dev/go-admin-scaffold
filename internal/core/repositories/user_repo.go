@@ -2,11 +2,11 @@ package repositories
 
 import (
 	"context"
-	"log"
 
 	"app/internal/config"
 	"app/internal/core/models"
 	"app/internal/core/types"
+	"app/pkg/logger"
 
 	"gorm.io/gorm"
 )
@@ -87,14 +87,12 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint) (*models.User, e
 		Where("id = ?", id).
 		First(&user).Error
 	if err != nil {
-		log.Printf("[ERROR] Failed to find user by ID %d: %v", id, err)
+		logger.Error(ctx, "user FindByID failed", "error", err, "id", id)
 		return nil, err
 	}
 
-	// Set IsSuperAdmin field using config
 	if r.config != nil {
-		superAdminIDs := r.config.ParseSuperAdminIDs()
-		for _, adminID := range superAdminIDs {
+		for _, adminID := range r.config.SuperAdminUintIDs() {
 			if adminID == user.ID {
 				user.IsSuperAdmin = true
 				break
@@ -102,7 +100,6 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint) (*models.User, e
 		}
 	}
 
-	log.Printf("[DEBUG] Found user %d with %d roles, IsSuperAdmin: %v", user.ID, len(user.Roles), user.IsSuperAdmin)
 	return &user, nil
 }
 

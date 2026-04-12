@@ -77,6 +77,10 @@ func (t CustomTime) String() string {
 	return time.Time(t).Local().Format("2006-01-02 15:04:05")
 }
 
+// BaseModel is the standard embedded model for soft delete.
+//
+// Convention: embed BaseModel on GORM models that should use soft delete (default queries exclude rows with DeletedAt set).
+// To include deleted rows in a query, use db.Unscoped(). To permanently remove a row, use Unscoped().Delete(...).
 type BaseModel struct {
 	ID uint `gorm:"primarykey" json:"id"`
 	// CreatedAt CustomTime `json:"created_at"`

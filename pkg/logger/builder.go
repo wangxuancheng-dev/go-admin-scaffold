@@ -2,12 +2,9 @@ package logger
 
 import (
 	"fmt"
-	"path/filepath"
-	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // LogBuilder 用于构建日志实例
@@ -75,23 +72,9 @@ func (b *LogBuilder) SetCompress(compress bool) *LogBuilder {
 
 // Build 构建并返回日志实例
 func (b *LogBuilder) Build() (*Logger, error) {
-	// 如果是按天分割，修改文件名
-	if b.config.Daily {
-		dir := filepath.Dir(b.config.Filename)
-		base := filepath.Base(b.config.Filename)
-		ext := filepath.Ext(base)
-		name := base[:len(base)-len(ext)]
-		date := time.Now().Format("2006-01-02")
-		b.config.Filename = filepath.Join(dir, fmt.Sprintf("%s-%s%s", name, date, ext))
-	}
-
-	// 创建 lumberjack logger
-	hook := &lumberjack.Logger{
-		Filename:   b.config.Filename,
-		MaxSize:    b.config.MaxSize,
-		MaxBackups: b.config.MaxBackups,
-		MaxAge:     b.config.MaxAge,
-		Compress:   b.config.Compress,
+	writer, err := openLogWriter(b.config)
+	if err != nil {
+		return nil, fmt.Errorf("log writer: %w", err)
 	}
 
 	// 设置日志编码配置
@@ -127,7 +110,7 @@ func (b *LogBuilder) Build() (*Logger, error) {
 	// 创建 Core
 	core := zapcore.NewCore(
 		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.AddSync(hook),
+		writer,
 		level,
 	)
 

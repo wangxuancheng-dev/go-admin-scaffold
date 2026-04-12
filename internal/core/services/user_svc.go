@@ -3,13 +3,13 @@ package services
 import (
 	"context"
 	"errors"
-	"log"
 	"strconv"
 	"time"
 
 	"app/internal/config"
 	"app/internal/core/models"
 	"app/internal/core/types"
+	"app/pkg/logger"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -40,6 +40,7 @@ type UserService struct {
 	logSvc   LogServiceInterface
 	authSvc  AuthServiceInterface
 	config   *config.Config
+	permInv  PermissionCacheInvalidator
 }
 
 func NewUserService(userRepo UserRepository, logSvc LogServiceInterface, config *config.Config) *UserService {
@@ -53,6 +54,17 @@ func NewUserService(userRepo UserRepository, logSvc LogServiceInterface, config 
 // SetAuthService sets the auth service instance
 func (s *UserService) SetAuthService(authSvc AuthServiceInterface) {
 	s.authSvc = authSvc
+}
+
+// SetPermissionCacheInvalidator wires RBAC permission cache invalidation (optional).
+func (s *UserService) SetPermissionCacheInvalidator(p PermissionCacheInvalidator) {
+	s.permInv = p
+}
+
+func (s *UserService) invalidateUserPermissions(ctx context.Context, userID uint) {
+	if s.permInv != nil {
+		s.permInv.InvalidateUserPermissions(ctx, userID)
+	}
 }
 
 type CreateUserRequest struct {
@@ -95,18 +107,14 @@ func (s *UserService) IsSuperAdmin(userID uint) bool {
 		return s.authSvc.IsSuperAdmin(userID)
 	}
 	if s.config == nil {
-		log.Printf("[ERROR] Config is nil when checking super admin for user %d", userID)
+		logger.Warn(context.Background(), "IsSuperAdmin: config nil", "user_id", userID)
 		return false
 	}
-	superAdminIDs := s.config.ParseSuperAdminIDs()
-	// log.Printf("[DEBUG] Checking if user %d is super admin. Super admin IDs: %v", userID, superAdminIDs)
-	for _, id := range superAdminIDs {
+	for _, id := range s.config.SuperAdminUintIDs() {
 		if id == userID {
-			log.Printf("[DEBUG] User %d is super admin", userID)
 			return true
 		}
 	}
-	log.Printf("[DEBUG] User %d is not super admin", userID)
 	return false
 }
 
@@ -172,6 +180,8 @@ func (s *UserService) Create(ctx context.Context, req *CreateUserRequest) (*mode
 	if err != nil {
 		return nil, err
 	}
+
+	s.invalidateUserPermissions(ctx, user.ID)
 
 	// Record operation log
 	if s.logSvc != nil {
@@ -283,6 +293,8 @@ func (s *UserService) Delete(ctx context.Context, id uint) error {
 	if err := s.userRepo.Delete(ctx, id); err != nil {
 		return err
 	}
+
+	s.invalidateUserPermissions(ctx, id)
 
 	// Record operation log
 	if s.logSvc != nil {
@@ -475,7 +487,7 @@ func (s *UserService) UpdateUserRoles(ctx context.Context, userID uint, roleIDs 
 		return ErrSuperAdminModify
 	}
 
-	return s.userRepo.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.userRepo.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Check if user exists
 		user, err := s.userRepo.FindByID(ctx, userID)
 		if err != nil {
@@ -528,4 +540,9 @@ func (s *UserService) UpdateUserRoles(ctx context.Context, userID uint, roleIDs 
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.invalidateUserPermissions(ctx, userID)
+	return nil
 }

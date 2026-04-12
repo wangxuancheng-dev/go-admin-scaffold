@@ -99,7 +99,9 @@ func shouldSkipLogging(path string) bool {
 	// Skip logging for these paths
 	skipPaths := []string{
 		"/api/admin/v1/logs",         // Skip logging the log endpoints themselves
-		"/api/open/v1/health",        // Skip health check endpoint
+		"/api/open/v1/public/health", // Skip health / readiness probes
+		"/api/open/v1/public/live",
+		"/api/open/v1/public/ready",
 		"/api/admin/v1/auth/refresh", // Skip token refresh endpoint
 	}
 

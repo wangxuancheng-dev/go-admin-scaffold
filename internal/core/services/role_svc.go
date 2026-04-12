@@ -9,7 +9,8 @@ import (
 )
 
 type RoleService struct {
-	db *gorm.DB
+	db      *gorm.DB
+	permInv PermissionCacheInvalidator
 }
 
 type CreateRoleRequest struct {
@@ -35,6 +36,17 @@ type UpdateRoleMenusRequest struct {
 func NewRoleService(db *gorm.DB) *RoleService {
 	return &RoleService{
 		db: db,
+	}
+}
+
+// SetPermissionCacheInvalidator wires RBAC permission cache invalidation (optional).
+func (s *RoleService) SetPermissionCacheInvalidator(p PermissionCacheInvalidator) {
+	s.permInv = p
+}
+
+func (s *RoleService) invalidateAllPermissions(ctx context.Context) {
+	if s.permInv != nil {
+		s.permInv.InvalidateAllPermissions(ctx)
 	}
 }
 
@@ -91,6 +103,9 @@ func (s *RoleService) Create(ctx context.Context, req *CreateRoleRequest) (*mode
 		return nil
 	})
 
+	if err == nil {
+		s.invalidateAllPermissions(ctx)
+	}
 	return result, err
 }
 
@@ -145,11 +160,14 @@ func (s *RoleService) Update(ctx context.Context, id uint, req *UpdateRoleReques
 		return nil
 	})
 
+	if err == nil && req.MenuIDs != nil {
+		s.invalidateAllPermissions(ctx)
+	}
 	return result, err
 }
 
 func (s *RoleService) Delete(ctx context.Context, id uint) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 检查是否是超级管理员角色
 		var role models.Role
 		if err := tx.First(&role, id).Error; err != nil {
@@ -173,6 +191,10 @@ func (s *RoleService) Delete(ctx context.Context, id uint) error {
 		// Delete role
 		return tx.Delete(&models.Role{}, id).Error
 	})
+	if err == nil {
+		s.invalidateAllPermissions(ctx)
+	}
+	return err
 }
 
 // assignMenus assigns menus to a role
@@ -209,7 +231,7 @@ func (s *RoleService) GetMenus(ctx context.Context, roleID uint) ([]models.Menu,
 
 // UpdateMenus updates the menus of a role
 func (s *RoleService) UpdateMenus(ctx context.Context, roleID uint, req *UpdateRoleMenusRequest) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Check if role exists
 		var role models.Role
 		if err := tx.First(&role, roleID).Error; err != nil {
@@ -219,4 +241,8 @@ func (s *RoleService) UpdateMenus(ctx context.Context, roleID uint, req *UpdateR
 		// Update menu associations
 		return s.assignMenus(tx, roleID, req.MenuIDs)
 	})
+	if err == nil {
+		s.invalidateAllPermissions(ctx)
+	}
+	return err
 }

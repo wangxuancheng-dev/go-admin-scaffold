@@ -1,10 +1,11 @@
 package middleware
 
 import (
-	"log"
 	"strings"
 
 	"app/internal/core/services"
+	"app/pkg/ginext"
+	"app/pkg/logger"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -22,24 +23,24 @@ func JWT() gin.HandlerFunc {
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			log.Printf("[ERROR] Invalid authorization header format: %s", authHeader)
+			logger.Sugared().Warnw("invalid authorization header format")
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
 		}
 
 		// Get auth service and user service
-		authSvc := c.MustGet("authService").(*services.AuthService)
+		authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
+		if !ok {
+			return
+		}
 
 		tokenString := parts[1]
-		log.Printf("[DEBUG] Received JWT token: %s", tokenString)
-		log.Printf("[DEBUG] JWT token length: %d", len(tokenString))
-		log.Printf("[DEBUG] JWT token segments: %d", len(strings.Split(tokenString, ".")))
 
 		// Validate token
 		claims, err := authSvc.ValidateToken(tokenString)
 		if err != nil {
-			log.Printf("[ERROR] Failed to validate token: %v", err)
+			logger.Sugared().Warnw("jwt validation failed", "error", err)
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -48,7 +49,7 @@ func JWT() gin.HandlerFunc {
 		// Get user from claims
 		user, err := authSvc.GetUserFromClaims(c.Request.Context(), claims)
 		if err != nil {
-			log.Printf("[ERROR] Failed to get user from claims: %v", err)
+			logger.Sugared().Warnw("get user from jwt claims failed", "error", err)
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -56,7 +57,7 @@ func JWT() gin.HandlerFunc {
 
 		// Set user in context
 		if user == nil {
-			log.Printf("[ERROR] User is nil after GetUserFromClaims")
+			logger.Sugared().Warnw("user nil after GetUserFromClaims")
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -64,7 +65,6 @@ func JWT() gin.HandlerFunc {
 
 		// Set IsSuperAdmin field
 		user.IsSuperAdmin = authSvc.IsSuperAdmin(user.ID)
-		log.Printf("[DEBUG] Set IsSuperAdmin field for user %d: %v", user.ID, user.IsSuperAdmin)
 
 		c.Set("user", user)
 		c.Next()

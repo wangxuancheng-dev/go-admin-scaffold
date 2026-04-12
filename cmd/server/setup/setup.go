@@ -27,6 +27,9 @@ func InitializeApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	// Initialize logger
 	if err := logger.Setup(&logger.Config{
@@ -37,6 +40,7 @@ func InitializeApp() (*App, error) {
 		MaxBackups: cfg.Log.MaxBackups,
 		Compress:   cfg.Log.Compress,
 		Daily:      cfg.Log.Daily,
+		Timezone:   cfg.Log.Timezone,
 	}); err != nil {
 		return nil, err
 	}
@@ -57,7 +61,9 @@ func InitializeApp() (*App, error) {
 	}
 
 	// Initialize i18n
-	i18n.New(&cfg.I18n)
+	if err := i18n.Init(&cfg.I18n); err != nil {
+		return nil, err
+	}
 
 	// Create Gin engine
 	engine := gin.New()
@@ -75,7 +81,9 @@ func InitializeApp() (*App, error) {
 	engine.Use(middleware.CORS(&cfg.CORS))
 
 	// Setup routes
-	routes.SetupRoutes(engine, cfg)
+	if err := routes.SetupRoutes(engine, cfg); err != nil {
+		return nil, err
+	}
 
 	return &App{
 		engine: engine,
@@ -110,6 +118,7 @@ func setupLogger() error {
 		MaxAge:     30,   // 30 days
 		Compress:   true, // Compress old files
 		Daily:      true, // Rotate daily
+		Timezone:   "",   // empty = time.Local
 	}
 
 	return logger.Setup(config)

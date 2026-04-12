@@ -3,6 +3,7 @@ package handlers
 import (
 	"app/internal/core/services"
 	"app/internal/core/ws"
+	"app/pkg/ginext"
 	"app/pkg/response"
 	"net/http"
 	"time"
@@ -53,8 +54,10 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// Validate token (get auth service from context)
-	authSvc := c.MustGet("authService").(*services.AuthService)
+	authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
+	if !ok {
+		return
+	}
 
 	claims, err := authSvc.ValidateToken(token)
 	if err != nil {

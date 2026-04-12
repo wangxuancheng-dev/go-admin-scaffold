@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/natefinch/lumberjack"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	lumberjackV2 "gopkg.in/natefinch/lumberjack.v2"
 )
 
 type contextKey string
@@ -24,15 +25,38 @@ type Config struct {
 	MaxAge     int    `yaml:"max_age"`     // 保留的旧日志文件最大天数
 	Compress   bool   `yaml:"compress"`    // 是否压缩旧日志文件
 	Daily      bool   `yaml:"daily"`       // 是否按天切割日志
+	// Timezone IANA name for daily file date and max_age cleanup (e.g. Asia/Shanghai, UTC). Empty = time.Local.
+	Timezone string `yaml:"timezone"`
 }
 
 var (
 	logger *zap.Logger
 	sugar  *zap.SugaredLogger
+
+	// currentDailyRotator is set when Setup uses daily rotation; closed in Close().
+	currentDailyRotator *dailyRotateWriter
 )
+
+func init() {
+	logger = zap.NewNop()
+	sugar = logger.Sugar()
+}
+
+// Sugared returns the process-wide sugared logger (no-op until Setup completes).
+func Sugared() *zap.SugaredLogger {
+	return sugar
+}
 
 // Setup initializes the logger
 func Setup(config *Config) error {
+	currentDailyRotator = nil
+
+	if tz := strings.TrimSpace(config.Timezone); tz != "" && !strings.EqualFold(tz, "local") {
+		if _, err := time.LoadLocation(tz); err != nil {
+			return fmt.Errorf("log.timezone %q: %w", tz, err)
+		}
+	}
+
 	// Create encoder config
 	encoderConfig := zapcore.EncoderConfig{
 		TimeKey:        "time",
@@ -48,17 +72,20 @@ func Setup(config *Config) error {
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
 
-	// Create log writer
-	var writer zapcore.WriteSyncer
+	writer, err := openLogWriter(config)
+	if err != nil {
+		return err
+	}
+	currentDailyRotator = nil
 	if config.Daily {
-		writer = getDailyWriter(config)
-	} else {
-		writer = getWriter(config)
+		if dw, ok := writer.(*dailyRotateWriter); ok {
+			currentDailyRotator = dw
+		}
 	}
 
 	// Parse log level
-	level, err := zapcore.ParseLevel(config.Level)
-	if err != nil {
+	level, parseErr := zapcore.ParseLevel(config.Level)
+	if parseErr != nil {
 		level = zapcore.InfoLevel
 	}
 
@@ -76,49 +103,23 @@ func Setup(config *Config) error {
 	return nil
 }
 
-// getWriter creates a lumberjack writer for continuous log file
-func getWriter(config *Config) zapcore.WriteSyncer {
-	// Ensure log directory exists
-	if err := os.MkdirAll(filepath.Dir(config.Filename), 0744); err != nil {
-		panic(err)
+// openLogWriter creates the file sink for Setup / LogBuilder (MkdirAll errors are returned, not panicked).
+func openLogWriter(config *Config) (zapcore.WriteSyncer, error) {
+	logDir := filepath.Dir(config.Filename)
+	if err := os.MkdirAll(logDir, 0750); err != nil {
+		return nil, fmt.Errorf("create log directory: %w", err)
 	}
-
-	return zapcore.AddSync(&lumberjack.Logger{
+	if config.Daily {
+		return newDailyRotateWriter(config), nil
+	}
+	return zapcore.AddSync(&lumberjackV2.Logger{
 		Filename:   config.Filename,
 		MaxSize:    config.MaxSize,
 		MaxBackups: config.MaxBackups,
 		MaxAge:     config.MaxAge,
 		Compress:   config.Compress,
-	})
-}
-
-// getDailyWriter creates a writer that rotates log files daily
-func getDailyWriter(config *Config) zapcore.WriteSyncer {
-	// Ensure log directory exists
-	logDir := filepath.Dir(config.Filename)
-	if err := os.MkdirAll(logDir, 0744); err != nil {
-		panic(err)
-	}
-
-	// Get base filename without extension
-	base := filepath.Base(config.Filename)
-	ext := filepath.Ext(base)
-	prefix := base[:len(base)-len(ext)]
-
-	// Create daily log file name
-	dailyFile := filepath.Join(logDir, fmt.Sprintf("%s-%s%s",
-		prefix,
-		time.Now().Format("2006-01-02"),
-		ext,
-	))
-
-	return zapcore.AddSync(&lumberjack.Logger{
-		Filename:   dailyFile,
-		MaxSize:    config.MaxSize,
-		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAge,
-		Compress:   config.Compress,
-	})
+		LocalTime:  true,
+	}), nil
 }
 
 // WithField adds a field to the logger context
@@ -164,5 +165,12 @@ func Fatal(ctx context.Context, msg string, args ...interface{}) {
 
 // Close flushes any buffered log entries
 func Close() error {
+	if currentDailyRotator != nil {
+		_ = currentDailyRotator.Close()
+		currentDailyRotator = nil
+	}
+	if logger == nil {
+		return nil
+	}
 	return logger.Sync()
 }

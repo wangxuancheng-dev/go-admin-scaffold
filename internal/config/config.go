@@ -2,12 +2,13 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"app/pkg/i18n"
+	"app/pkg/logger"
 
 	"github.com/spf13/viper"
 )
@@ -26,6 +27,8 @@ type Config struct {
 	Server     ServerConfig     `mapstructure:"server"`
 	Storage    StorageConfig    `mapstructure:"storage"`
 	SuperAdmin SuperAdminConfig `mapstructure:"super_admin"`
+	// SuperAdminIDs parsed once at load (from super_admin.user_ids). Not loaded from YAML keys.
+	SuperAdminIDs []uint `yaml:"-" mapstructure:"-"`
 }
 
 // ServerConfig holds server configuration
@@ -49,6 +52,7 @@ type AppConfig struct {
 type JWTConfig struct {
 	Secret     string `mapstructure:"secret"`
 	ExpireTime int    `mapstructure:"expire_time"`
+	Issuer     string `mapstructure:"issuer"`
 }
 
 // DatabaseConfig holds database configuration
@@ -60,6 +64,8 @@ type DatabaseConfig struct {
 	Username        string `mapstructure:"username"`
 	Password        string `mapstructure:"password"`
 	Charset         string `mapstructure:"charset"`
+	SSLMode         string `mapstructure:"sslmode"`  // postgres DSN sslmode (e.g. disable, require)
+	TimeZone        string `mapstructure:"timezone"` // postgres DSN TimeZone (e.g. UTC, Asia/Shanghai)
 	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
 	MaxOpenConns    int    `mapstructure:"max_open_conns"`
 	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"`
@@ -75,13 +81,14 @@ type RedisConfig struct {
 
 // LogConfig represents logging configuration
 type LogConfig struct {
-	Level      string `yaml:"level"`       // 日志级别
-	Filename   string `yaml:"filename"`    // 日志文件路径
-	MaxSize    int    `yaml:"max_size"`    // 每个日志文件最大尺寸，单位MB
-	MaxBackups int    `yaml:"max_backups"` // 保留的旧日志文件最大数量
-	MaxAge     int    `yaml:"max_age"`     // 保留的旧日志文件最大天数
-	Compress   bool   `yaml:"compress"`    // 是否压缩旧日志文件
-	Daily      bool   `yaml:"daily"`       // 是否按天切割日志
+	Level      string `yaml:"level" mapstructure:"level"`             // 日志级别
+	Filename   string `yaml:"filename" mapstructure:"filename"`       // 日志文件路径
+	MaxSize    int    `yaml:"max_size" mapstructure:"max_size"`       // 每个日志文件最大尺寸，单位MB
+	MaxBackups int    `yaml:"max_backups" mapstructure:"max_backups"` // 保留的旧日志文件最大数量
+	MaxAge     int    `yaml:"max_age" mapstructure:"max_age"`         // 保留的旧日志文件最大天数
+	Compress   bool   `yaml:"compress" mapstructure:"compress"`       // 是否压缩旧日志文件
+	Daily      bool   `yaml:"daily" mapstructure:"daily"`             // 是否按天切割日志
+	Timezone   string `yaml:"timezone" mapstructure:"timezone"`       // IANA 时区，按日轮转与 max_age 清理；空或 Local = 进程默认
 }
 
 // CacheConfig holds cache configuration
@@ -158,138 +165,176 @@ type SuperAdminConfig struct {
 	UserIDs []string `mapstructure:"user_ids"`
 }
 
-// Load loads configuration from environment variables and config files
+// LoadConfig loads configuration from default search paths and environment variables.
 func LoadConfig() (*Config, error) {
-	config := &Config{}
-
-	// Set default configuration file paths
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-
-	// 配置文件搜索路径
-	viper.AddConfigPath("./configs") // 首选路径
-	viper.AddConfigPath(".")         // 当前目录
-	viper.AddConfigPath("/etc/app/") // 系统配置目录
-
-	// Load configuration file
+	viper.AddConfigPath("./configs")
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("/etc/app/")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			return nil, fmt.Errorf("config file not found: %v", err)
 		}
 		return nil, fmt.Errorf("error reading config file: %v", err)
 	}
+	return populateConfigFromViper(viper.GetViper())
+}
 
-	// Environment variables take precedence over config file
-	// App
-	config.App.Name = getEnvOrDefault("APP_NAME", viper.GetString("app.name"))
-	config.App.Env = getEnvOrDefault("APP_ENV", viper.GetString("app.env"))
-	config.App.Debug = getEnvBoolOrDefault("APP_DEBUG", viper.GetBool("app.debug"))
-	config.App.BaseURL = getEnvOrDefault("APP_URL", viper.GetString("app.baseUrl"))
-	config.App.Port = getEnvIntOrDefault("APP_PORT", viper.GetInt("app.port"))
-	config.App.APIPrefix = getEnvOrDefault("APP_API_PREFIX", viper.GetString("app.api_prefix"))
+// LoadConfigFromFile loads configuration from an explicit YAML file (e.g. queue CLI with -config).
+func LoadConfigFromFile(path string) (*Config, error) {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	v.SetConfigFile(path)
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("read config file %s: %w", path, err)
+	}
+	return populateConfigFromViper(v)
+}
 
-	// JWT
-	config.JWT.Secret = getEnvOrDefault("JWT_SECRET", viper.GetString("jwt.secret"))
-	config.JWT.ExpireTime = getEnvIntOrDefault("JWT_EXPIRE", viper.GetInt("jwt.expire_time"))
+func populateConfigFromViper(v *viper.Viper) (*Config, error) {
+	config := &Config{}
 
-	// Database
-	config.Database.Driver = getEnvOrDefault("DB_DRIVER", viper.GetString("database.driver"))
-	config.Database.Host = getEnvOrDefault("DB_HOST", viper.GetString("database.host"))
-	config.Database.Port = getEnvOrDefault("DB_PORT", viper.GetString("database.port"))
-	config.Database.Username = getEnvOrDefault("DB_USERNAME", viper.GetString("database.username"))
-	config.Database.Password = getEnvOrDefault("DB_PASSWORD", viper.GetString("database.password"))
-	config.Database.Database = getEnvOrDefault("DB_DATABASE", viper.GetString("database.database"))
-	config.Database.Charset = getEnvOrDefault("DB_CHARSET", viper.GetString("database.charset"))
-	config.Database.MaxIdleConns = getEnvIntOrDefault("DB_MAX_IDLE_CONNS", viper.GetInt("database.max_idle_conns"))
-	config.Database.MaxOpenConns = getEnvIntOrDefault("DB_MAX_OPEN_CONNS", viper.GetInt("database.max_open_conns"))
-	config.Database.ConnMaxLifetime = getEnvIntOrDefault("DB_CONN_MAX_LIFETIME", viper.GetInt("database.conn_max_lifetime"))
+	config.App.Name = getEnvOrDefault("APP_NAME", v.GetString("app.name"))
+	config.App.Env = getEnvOrDefault("APP_ENV", v.GetString("app.env"))
+	config.App.Mode = getEnvOrDefault("APP_MODE", v.GetString("app.mode"))
+	config.App.Debug = getEnvBoolOrDefault("APP_DEBUG", v.GetBool("app.debug"))
+	config.App.BaseURL = getEnvOrDefault("APP_URL", v.GetString("app.baseUrl"))
+	config.App.Port = getEnvIntOrDefault("APP_PORT", v.GetInt("app.port"))
+	config.App.APIPrefix = getEnvOrDefault("APP_API_PREFIX", v.GetString("app.api_prefix"))
 
-	// Redis
-	config.Redis.Host = getEnvOrDefault("REDIS_HOST", viper.GetString("redis.host"))
-	config.Redis.Port = getEnvOrDefault("REDIS_PORT", viper.GetString("redis.port"))
-	config.Redis.Password = getEnvOrDefault("REDIS_PASSWORD", viper.GetString("redis.password"))
-	config.Redis.DB = getEnvIntOrDefault("REDIS_DB", viper.GetInt("redis.db"))
+	config.JWT.Secret = getEnvOrDefault("JWT_SECRET", v.GetString("jwt.secret"))
+	config.JWT.ExpireTime = getEnvIntOrDefault("JWT_EXPIRE", v.GetInt("jwt.expire_time"))
+	config.JWT.Issuer = getEnvOrDefault("JWT_ISSUER", v.GetString("jwt.issuer"))
 
-	// Cache
-	config.Cache.Driver = getEnvOrDefault("CACHE_DRIVER", viper.GetString("cache.driver"))
-	config.Cache.Prefix = getEnvOrDefault("CACHE_PREFIX", viper.GetString("cache.prefix"))
-	config.Cache.Options = viper.GetStringMap("cache.options")
+	config.Database.Driver = getEnvOrDefault("DB_DRIVER", v.GetString("database.driver"))
+	config.Database.Host = getEnvOrDefault("DB_HOST", v.GetString("database.host"))
+	config.Database.Port = getEnvOrDefault("DB_PORT", v.GetString("database.port"))
+	config.Database.Username = getEnvOrDefault("DB_USERNAME", v.GetString("database.username"))
+	config.Database.Password = getEnvOrDefault("DB_PASSWORD", v.GetString("database.password"))
+	config.Database.Database = getEnvOrDefault("DB_DATABASE", v.GetString("database.database"))
+	config.Database.Charset = getEnvOrDefault("DB_CHARSET", v.GetString("database.charset"))
+	config.Database.SSLMode = getEnvOrDefault("DB_SSLMODE", v.GetString("database.sslmode"))
+	config.Database.TimeZone = getEnvOrDefault("DB_TIMEZONE", v.GetString("database.timezone"))
+	config.Database.MaxIdleConns = getEnvIntOrDefault("DB_MAX_IDLE_CONNS", v.GetInt("database.max_idle_conns"))
+	config.Database.MaxOpenConns = getEnvIntOrDefault("DB_MAX_OPEN_CONNS", v.GetInt("database.max_open_conns"))
+	config.Database.ConnMaxLifetime = getEnvIntOrDefault("DB_CONN_MAX_LIFETIME", v.GetInt("database.conn_max_lifetime"))
 
-	// Queue
-	config.Queue.Driver = getEnvOrDefault("QUEUE_DRIVER", viper.GetString("queue.driver"))
-	config.Queue.Queue = getEnvOrDefault("QUEUE_NAME", viper.GetString("queue.queue"))
+	config.Redis.Host = getEnvOrDefault("REDIS_HOST", v.GetString("redis.host"))
+	config.Redis.Port = getEnvOrDefault("REDIS_PORT", v.GetString("redis.port"))
+	config.Redis.Password = getEnvOrDefault("REDIS_PASSWORD", v.GetString("redis.password"))
+	config.Redis.DB = getEnvIntOrDefault("REDIS_DB", v.GetInt("redis.db"))
 
-	// Queue connection
-	config.Queue.Connection.Redis = viper.GetString("queue.connection.redis")
-	config.Queue.Connection.Database = viper.GetString("queue.connection.database")
+	config.Cache.Driver = getEnvOrDefault("CACHE_DRIVER", v.GetString("cache.driver"))
+	config.Cache.Prefix = getEnvOrDefault("CACHE_PREFIX", v.GetString("cache.prefix"))
+	config.Cache.Options = v.GetStringMap("cache.options")
 
-	// Queue worker
-	config.Queue.Worker.Sleep = viper.GetInt("queue.worker.sleep")
-	config.Queue.Worker.MaxJobs = viper.GetInt("queue.worker.max_jobs")
-	config.Queue.Worker.MaxTime = viper.GetInt("queue.worker.max_time")
-	config.Queue.Worker.Rest = viper.GetInt("queue.worker.rest")
-	config.Queue.Worker.Memory = viper.GetInt("queue.worker.memory")
-	config.Queue.Worker.Tries = viper.GetInt("queue.worker.tries")
-	config.Queue.Worker.Timeout = viper.GetInt("queue.worker.timeout")
+	config.Queue.Driver = getEnvOrDefault("QUEUE_DRIVER", v.GetString("queue.driver"))
+	config.Queue.Queue = getEnvOrDefault("QUEUE_NAME", v.GetString("queue.queue"))
+	config.Queue.Connection.Redis = v.GetString("queue.connection.redis")
+	config.Queue.Connection.Database = v.GetString("queue.connection.database")
+	config.Queue.Worker.Sleep = v.GetInt("queue.worker.sleep")
+	config.Queue.Worker.MaxJobs = v.GetInt("queue.worker.max_jobs")
+	config.Queue.Worker.MaxTime = v.GetInt("queue.worker.max_time")
+	config.Queue.Worker.Rest = v.GetInt("queue.worker.rest")
+	config.Queue.Worker.Memory = v.GetInt("queue.worker.memory")
+	config.Queue.Worker.Tries = v.GetInt("queue.worker.tries")
+	config.Queue.Worker.Timeout = v.GetInt("queue.worker.timeout")
 
-	// Queue details
 	config.Queue.Queues = make(map[string]QueueDetail)
-	queues := viper.GetStringMap("queue.queues")
-	for name := range queues {
+	for name := range v.GetStringMap("queue.queues") {
 		var detail QueueDetail
-		if err := viper.UnmarshalKey("queue.queues."+name, &detail); err != nil {
+		if err := v.UnmarshalKey("queue.queues."+name, &detail); err != nil {
 			return nil, fmt.Errorf("error unmarshaling queue %s: %v", name, err)
 		}
 		config.Queue.Queues[name] = detail
 	}
 
-	// Server
-	config.Server.Address = getEnvOrDefault("SERVER_ADDRESS", viper.GetString("server.address"))
-	config.Server.Mode = getEnvOrDefault("SERVER_MODE", viper.GetString("server.mode"))
+	config.Server.Address = getEnvOrDefault("SERVER_ADDRESS", v.GetString("server.address"))
+	config.Server.Mode = getEnvOrDefault("SERVER_MODE", v.GetString("server.mode"))
 
-	// Log
-	config.Log.Level = getEnvOrDefault("LOG_LEVEL", viper.GetString("log.level"))
-	config.Log.Filename = getEnvOrDefault("LOG_FILENAME", viper.GetString("log.filename"))
-	config.Log.MaxSize = getEnvIntOrDefault("LOG_MAX_SIZE", viper.GetInt("log.maxSize"))
-	config.Log.MaxBackups = getEnvIntOrDefault("LOG_MAX_BACKUPS", viper.GetInt("log.maxBackups"))
-	config.Log.MaxAge = getEnvIntOrDefault("LOG_MAX_AGE", viper.GetInt("log.maxAge"))
-	config.Log.Compress = getEnvBoolOrDefault("LOG_COMPRESS", viper.GetBool("log.compress"))
-	config.Log.Daily = getEnvBoolOrDefault("LOG_DAILY", viper.GetBool("log.daily"))
+	config.Log.Level = getEnvOrDefault("LOG_LEVEL", v.GetString("log.level"))
+	config.Log.Filename = getEnvOrDefault("LOG_FILENAME", v.GetString("log.filename"))
+	config.Log.MaxSize = getEnvIntOrDefault("LOG_MAX_SIZE", v.GetInt("log.max_size"))
+	config.Log.MaxBackups = getEnvIntOrDefault("LOG_MAX_BACKUPS", v.GetInt("log.max_backups"))
+	config.Log.MaxAge = getEnvIntOrDefault("LOG_MAX_AGE", v.GetInt("log.max_age"))
+	config.Log.Compress = getEnvBoolOrDefault("LOG_COMPRESS", v.GetBool("log.compress"))
+	config.Log.Daily = getEnvBoolOrDefault("LOG_DAILY", v.GetBool("log.daily"))
+	config.Log.Timezone = getEnvOrDefault("LOG_TIMEZONE", v.GetString("log.timezone"))
 
-	// CORS
-	config.CORS.AllowOrigins = viper.GetStringSlice("cors.allow_origins")
-	config.CORS.AllowMethods = viper.GetStringSlice("cors.allow_methods")
-	config.CORS.AllowHeaders = viper.GetStringSlice("cors.allow_headers")
-	config.CORS.ExposeHeaders = viper.GetStringSlice("cors.expose_headers")
-	config.CORS.AllowCredentials = viper.GetBool("cors.allow_credentials")
-	config.CORS.MaxAge = viper.GetDuration("cors.max_age")
+	config.CORS.AllowOrigins = v.GetStringSlice("cors.allow_origins")
+	config.CORS.AllowMethods = v.GetStringSlice("cors.allow_methods")
+	config.CORS.AllowHeaders = v.GetStringSlice("cors.allow_headers")
+	config.CORS.ExposeHeaders = v.GetStringSlice("cors.expose_headers")
+	config.CORS.AllowCredentials = v.GetBool("cors.allow_credentials")
+	config.CORS.MaxAge = v.GetDuration("cors.max_age")
 
-	// I18n
-	config.I18n.DefaultLocale = getEnvOrDefault("I18N_DEFAULT_LOCALE", viper.GetString("i18n.default_locale"))
-	config.I18n.LoadPath = getEnvOrDefault("I18N_LOAD_PATH", viper.GetString("i18n.load_path"))
-	config.I18n.AvailableLocales = viper.GetStringSlice("i18n.available_locales")
+	config.I18n.DefaultLocale = getEnvOrDefault("I18N_DEFAULT_LOCALE", v.GetString("i18n.default_locale"))
+	config.I18n.LoadPath = getEnvOrDefault("I18N_LOAD_PATH", v.GetString("i18n.load_path"))
+	config.I18n.AvailableLocales = v.GetStringSlice("i18n.available_locales")
 
-	// Storage
-	config.Storage.Driver = getEnvOrDefault("STORAGE_DRIVER", viper.GetString("storage.driver"))
+	config.Storage.Driver = getEnvOrDefault("STORAGE_DRIVER", v.GetString("storage.driver"))
+	config.Storage.Local.Path = getEnvOrDefault("STORAGE_LOCAL_PATH", v.GetString("storage.local.path"))
+	config.Storage.S3.Endpoint = getEnvOrDefault("STORAGE_S3_ENDPOINT", v.GetString("storage.s3.endpoint"))
+	config.Storage.S3.AccessKeyID = getEnvOrDefault("STORAGE_S3_ACCESS_KEY_ID", v.GetString("storage.s3.access_key_id"))
+	config.Storage.S3.SecretAccessKey = getEnvOrDefault("STORAGE_S3_SECRET_ACCESS_KEY", v.GetString("storage.s3.secret_access_key"))
+	config.Storage.S3.Bucket = getEnvOrDefault("STORAGE_S3_BUCKET", v.GetString("storage.s3.bucket"))
+	config.Storage.S3.Region = getEnvOrDefault("STORAGE_S3_REGION", v.GetString("storage.s3.region"))
+	config.Storage.S3.UseSSL = getEnvBoolOrDefault("STORAGE_S3_USE_SSL", v.GetBool("storage.s3.use_ssl"))
 
-	// Local storage
-	config.Storage.Local.Path = getEnvOrDefault("STORAGE_LOCAL_PATH", viper.GetString("storage.local.path"))
-
-	// S3 storage
-	config.Storage.S3.Endpoint = getEnvOrDefault("STORAGE_S3_ENDPOINT", viper.GetString("storage.s3.endpoint"))
-	config.Storage.S3.AccessKeyID = getEnvOrDefault("STORAGE_S3_ACCESS_KEY_ID", viper.GetString("storage.s3.access_key_id"))
-	config.Storage.S3.SecretAccessKey = getEnvOrDefault("STORAGE_S3_SECRET_ACCESS_KEY", viper.GetString("storage.s3.secret_access_key"))
-	config.Storage.S3.Bucket = getEnvOrDefault("STORAGE_S3_BUCKET", viper.GetString("storage.s3.bucket"))
-	config.Storage.S3.Region = getEnvOrDefault("STORAGE_S3_REGION", viper.GetString("storage.s3.region"))
-	config.Storage.S3.UseSSL = getEnvBoolOrDefault("STORAGE_S3_USE_SSL", viper.GetBool("storage.s3.use_ssl"))
-
-	// SuperAdmin
-	superAdminIDs := viper.GetStringSlice("super_admin.user_ids")
-	for _, idStr := range superAdminIDs {
+	for _, idStr := range v.GetStringSlice("super_admin.user_ids") {
 		config.SuperAdmin.UserIDs = append(config.SuperAdmin.UserIDs, idStr)
 	}
+	config.SuperAdminIDs = parseSuperAdminUints(config.SuperAdmin.UserIDs)
 
 	return config, nil
+}
+
+func parseSuperAdminUints(strs []string) []uint {
+	out := make([]uint, 0, len(strs))
+	for _, idStr := range strs {
+		if id, err := strconv.ParseUint(idStr, 10, 32); err == nil {
+			out = append(out, uint(id))
+		} else {
+			logger.Sugared().Warnw("invalid super_admin user_id", "id", idStr, "error", err)
+		}
+	}
+	return out
+}
+
+// Validate checks production-safety constraints. Call after LoadConfig / LoadConfigFromFile.
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if strings.EqualFold(c.App.Env, "production") {
+		if len(c.JWT.Secret) < 32 {
+			return fmt.Errorf("production: jwt.secret must be at least 32 characters")
+		}
+		if strings.TrimSpace(c.Database.Host) == "" {
+			return fmt.Errorf("production: database.host is required")
+		}
+		if strings.TrimSpace(c.Database.Database) == "" {
+			return fmt.Errorf("production: database.database is required")
+		}
+		if strings.TrimSpace(c.Redis.Host) == "" {
+			return fmt.Errorf("production: redis.host is required")
+		}
+		for _, o := range c.CORS.AllowOrigins {
+			if strings.TrimSpace(o) == "*" {
+				return fmt.Errorf("production: cors.allow_origins must not use wildcard \"*\"")
+			}
+		}
+	}
+	return nil
+}
+
+// SuperAdminUintIDs returns super-admin user IDs parsed at load time.
+func (c *Config) SuperAdminUintIDs() []uint {
+	if c == nil {
+		return nil
+	}
+	return c.SuperAdminIDs
 }
 
 // getEnvOrDefault gets environment variable value or returns default value
@@ -320,18 +365,3 @@ func getEnvBoolOrDefault(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-// ParseSuperAdminIDs converts string IDs to uint
-func (c *Config) ParseSuperAdminIDs() []uint {
-	var ids []uint
-	log.Printf("[DEBUG] Parsing super admin IDs from config: %v", c.SuperAdmin.UserIDs)
-	for _, idStr := range c.SuperAdmin.UserIDs {
-		if id, err := strconv.ParseUint(idStr, 10, 32); err == nil {
-			ids = append(ids, uint(id))
-			log.Printf("[DEBUG] Successfully parsed super admin ID: %d", id)
-		} else {
-			log.Printf("[ERROR] Failed to parse super admin ID %s: %v", idStr, err)
-		}
-	}
-	log.Printf("[DEBUG] Final parsed super admin IDs: %v", ids)
-	return ids
-}

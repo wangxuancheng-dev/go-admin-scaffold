@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"app/internal/core/services"
+	"app/pkg/ginext"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -16,7 +17,10 @@ func ListLoginLogs(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
 	// Get log service
-	logSvc := c.MustGet("logService").(*services.LogService)
+	logSvc, ok := ginext.GetService[*services.LogService](c, "logService")
+	if !ok {
+		return
+	}
 
 	// Get logs with pagination
 	logs, total, err := logSvc.GetLoginLogs(c.Request.Context(), page, pageSize)
@@ -35,7 +39,10 @@ func ListOperationLogs(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
 	// Get log service
-	logSvc := c.MustGet("logService").(*services.LogService)
+	logSvc, ok := ginext.GetService[*services.LogService](c, "logService")
+	if !ok {
+		return
+	}
 
 	// Get logs with pagination
 	logs, total, err := logSvc.GetOperationLogs(c.Request.Context(), page, pageSize)
@@ -57,7 +64,10 @@ func GetUserLogs(c *gin.Context) {
 	}
 
 	// Get log service
-	logSvc := c.MustGet("logService").(*services.LogService)
+	logSvc, ok := ginext.GetService[*services.LogService](c, "logService")
+	if !ok {
+		return
+	}
 
 	// Get user's logs
 	loginLogs, err := logSvc.GetUserLoginLogs(c.Request.Context(), uint(userID))

@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"app/pkg/response"
-	"net/http"
 	"sync"
 	"time"
 
@@ -101,7 +100,7 @@ func RateLimit(r rate.Limit, b int) gin.HandlerFunc {
 		ip := c.ClientIP()
 
 		if !limiter.getLimiter(path, ip).Allow() {
-			response.Error(c, http.StatusTooManyRequests, "Too Many Requests")
+			response.TooManyRequests(c, "Too many requests")
 			c.Abort()
 			return
 		}

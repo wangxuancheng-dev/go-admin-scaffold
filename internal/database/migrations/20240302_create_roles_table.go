@@ -25,22 +25,21 @@ func init() {
 			return err
 		}
 
-		// Add indexes (check if they exist first)
-		var count int64
-
-		// Check and create idx_roles_code
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'roles' AND index_name = 'idx_roles_code'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_roles_code ON roles(code)").Error; err != nil {
+		for _, pair := range []struct {
+			name   string
+			create string
+		}{
+			{"idx_roles_code", "CREATE INDEX idx_roles_code ON roles(code)"},
+			{"idx_roles_status", "CREATE INDEX idx_roles_status ON roles(status)"},
+		} {
+			ok, err := indexExists(tx, "roles", pair.name)
+			if err != nil {
 				return err
 			}
-		}
-
-		// Check and create idx_roles_status
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'roles' AND index_name = 'idx_roles_status'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_roles_status ON roles(status)").Error; err != nil {
-				return err
+			if !ok {
+				if err := tx.Exec(pair.create).Error; err != nil {
+					return err
+				}
 			}
 		}
 
@@ -48,15 +47,8 @@ func init() {
 	}
 
 	down := func(tx *gorm.DB) error {
-		// Drop indexes first (MySQL compatible syntax)
-		if err := tx.Exec("ALTER TABLE roles DROP INDEX idx_roles_code").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-		if err := tx.Exec("ALTER TABLE roles DROP INDEX idx_roles_status").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-
-		// Drop table
+		dropIndexBestEffort(tx, "roles", "idx_roles_code")
+		dropIndexBestEffort(tx, "roles", "idx_roles_status")
 		return tx.Migrator().DropTable("roles")
 	}
 

@@ -5,6 +5,7 @@ import (
 
 	"app/internal/core/models"
 	"app/internal/core/services"
+	"app/pkg/ginext"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,10 @@ func ListRoles(c *gin.Context) {
 		PageSize: pageSize,
 	}
 
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
+	if !ok {
+		return
+	}
 	roles, err := roleSvc.List(c.Request.Context(), pagination)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to fetch roles")
@@ -40,7 +44,10 @@ func CreateRole(c *gin.Context) {
 		return
 	}
 
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
+	if !ok {
+		return
+	}
 	role, err := roleSvc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to create role")
@@ -58,7 +65,10 @@ func GetRole(c *gin.Context) {
 		return
 	}
 
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
+	if !ok {
+		return
+	}
 	role, err := roleSvc.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -86,7 +96,10 @@ func UpdateRole(c *gin.Context) {
 		return
 	}
 
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
+	if !ok {
+		return
+	}
 	role, err := roleSvc.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to update role")
@@ -104,7 +117,10 @@ func DeleteRole(c *gin.Context) {
 		return
 	}
 
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
+	if !ok {
+		return
+	}
 	if err := roleSvc.Delete(c.Request.Context(), uint(id)); err != nil {
 		response.Error(c, response.CodeServerError, "failed to delete role")
 		return
@@ -139,8 +155,14 @@ func GetRoleMenus(c *gin.Context) {
 		return
 	}
 
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	menuSvc, okMenu := ginext.GetService[*services.MenuService](c, "menuService")
+	if !okMenu {
+		return
+	}
+	roleSvc, okRole := ginext.GetService[*services.RoleService](c, "roleService")
+	if !okRole {
+		return
+	}
 
 	// Get all menus
 	allMenus, err := menuSvc.GetAll(c.Request.Context())
@@ -183,7 +205,10 @@ func UpdateRoleMenus(c *gin.Context) {
 		return
 	}
 
-	roleSvc := c.MustGet("roleService").(*services.RoleService)
+	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
+	if !ok {
+		return
+	}
 	if err := roleSvc.UpdateMenus(c.Request.Context(), uint(id), &req); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			response.NotFoundError(c)

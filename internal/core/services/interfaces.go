@@ -9,6 +9,20 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserServiceAPI is the subset of user operations used by admin HTTP handlers.
+// *UserService implements this interface; tests may provide mocks.
+type UserServiceAPI interface {
+	ListWithFilters(ctx context.Context, pagination *models.Pagination, filters *types.UserSearchFilters) ([]models.User, error)
+	Create(ctx context.Context, req *CreateUserRequest) (*models.User, error)
+	GetByID(ctx context.Context, id uint) (*models.User, error)
+	Update(ctx context.Context, id uint, req *UpdateUserRequest) (*models.User, error)
+	Delete(ctx context.Context, id uint) error
+	ExportUserList(ctx context.Context, req *ExportUserListRequest) ([]models.User, error)
+	UpdateUserRoles(ctx context.Context, userID uint, roleIDs []uint) error
+	UpdateStatus(ctx context.Context, id uint, status int) error
+	IsSuperAdmin(userID uint) bool
+}
+
 // UserRepository defines the interface for user data access
 type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*models.User, error)

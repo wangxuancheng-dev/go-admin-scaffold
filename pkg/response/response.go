@@ -16,13 +16,17 @@ type Response struct {
 	TraceID string      `json:"trace_id"` // Trace ID for request tracking
 }
 
-// PageData represents paginated data
-type PageData struct {
-	List     interface{} `json:"list"`      // List data
-	Total    int64       `json:"total"`     // Total count
-	Page     int         `json:"page"`      // Current page
-	PageSize int         `json:"page_size"` // Page size
-	Pages    int         `json:"pages"`     // Total pages
+// PaginationMeta matches the pagination object in list responses.
+type PaginationMeta struct {
+	Total    int64 `json:"total"`
+	Page     int   `json:"page"`
+	PageSize int   `json:"page_size"`
+}
+
+// PagedList is the standard list payload returned by PageSuccess (items + pagination).
+type PagedList struct {
+	Items      interface{}    `json:"items"`
+	Pagination PaginationMeta `json:"pagination"`
 }
 
 // Response codes
@@ -40,6 +44,7 @@ const (
 	CodeInvalidCredentials = 10009 // Invalid credentials
 	CodeEmailTaken         = 10010 // Email already taken
 	CodePermissionDenied   = 10011 // Permission denied
+	CodeTooManyRequests    = 10012 // Rate limited
 )
 
 // Success sends a successful response
@@ -47,7 +52,7 @@ func Success(c *gin.Context, data interface{}) {
 	JSON(c, http.StatusOK, CodeSuccess, "success", data)
 }
 
-// Error sends an error response with trace ID
+// Error sends an error response with trace ID. HTTP status is always 200; clients must use json.code.
 func Error(c *gin.Context, code int, message string) {
 	resp := Response{
 		Code:    code,
@@ -74,13 +79,13 @@ func BusinessError(c *gin.Context, message string) {
 }
 
 // PageSuccess sends a successful paginated response
-func PageSuccess(c *gin.Context, data interface{}, total int64, page int, pageSize int) {
-	Success(c, gin.H{
-		"items": data,
-		"pagination": gin.H{
-			"total":     total,
-			"page":      page,
-			"page_size": pageSize,
+func PageSuccess(c *gin.Context, items interface{}, total int64, page, pageSize int) {
+	Success(c, PagedList{
+		Items: items,
+		Pagination: PaginationMeta{
+			Total:    total,
+			Page:     page,
+			PageSize: pageSize,
 		},
 	})
 }
@@ -96,46 +101,45 @@ func JSON(c *gin.Context, httpStatus, code int, message string, data interface{}
 	c.JSON(httpStatus, resp)
 }
 
-// Page represents paginated data
-type Page struct {
-	List     interface{} `json:"list"`      // List data
-	Total    int64       `json:"total"`     // Total count
-	Page     int         `json:"page"`      // Current page
-	PageSize int         `json:"page_size"` // Page size
-	Pages    int         `json:"pages"`     // Total pages
-}
-
-// ServerError returns a server error response
+// ServerError returns CodeServerError (HTTP 200, body.code).
 func ServerError(c *gin.Context) {
 	Error(c, CodeServerError, "Internal server error")
 }
 
-// UnauthorizedError returns an unauthorized error response
+// UnauthorizedError returns CodeUnauthorized (HTTP 200, body.code).
 func UnauthorizedError(c *gin.Context) {
 	Error(c, CodeUnauthorized, "Unauthorized")
 }
 
-// ForbiddenError returns a forbidden error response
+// ForbiddenError returns CodeForbidden (HTTP 200, body.code).
 func ForbiddenError(c *gin.Context) {
 	Error(c, CodeForbidden, "Forbidden")
 }
 
-// Unauthorized sends a 401 Unauthorized response
+// Unauthorized sends CodeUnauthorized (HTTP 200, body.code).
 func Unauthorized(c *gin.Context, message string) {
 	Error(c, CodeUnauthorized, message)
 }
 
-// Forbidden sends a 403 Forbidden response
+// Forbidden sends CodeForbidden (HTTP 200, body.code).
 func Forbidden(c *gin.Context, message string) {
 	Error(c, CodeForbidden, message)
 }
 
-// NotFound sends a 404 Not Found response
+// NotFound sends CodeNotFound (HTTP 200, body.code).
 func NotFound(c *gin.Context, message string) {
 	Error(c, CodeNotFound, message)
 }
 
-// ParamError sends a 400 Bad Request response for parameter errors
+// ParamError sends CodeParamError (HTTP 200, body.code).
 func ParamError(c *gin.Context, message string) {
 	Error(c, CodeParamError, message)
+}
+
+// TooManyRequests sends CodeTooManyRequests (HTTP 200, body.code).
+func TooManyRequests(c *gin.Context, message string) {
+	if message == "" {
+		message = "Too many requests"
+	}
+	Error(c, CodeTooManyRequests, message)
 }

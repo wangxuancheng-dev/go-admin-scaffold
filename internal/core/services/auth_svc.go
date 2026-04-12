@@ -3,14 +3,15 @@ package services
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"strings"
 	"time"
 
 	"app/internal/config"
 	"app/internal/core/models"
+	"app/pkg/logger"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -33,22 +34,16 @@ func NewAuthService(userRepo UserRepository, logSvc *LogService, config *config.
 	}
 }
 
-// IsSuperAdmin checks if a user ID is in the super admin list
+// IsSuperAdmin checks if a user ID is in the super admin list (parsed at config load).
 func (s *AuthService) IsSuperAdmin(userID uint) bool {
 	if s.config == nil {
-		log.Printf("[ERROR] Config is nil when checking super admin for user %d", userID)
 		return false
 	}
-	log.Printf("[DEBUG] Checking if user %d is super admin", userID)
-	superAdminIDs := s.config.ParseSuperAdminIDs()
-	log.Printf("[DEBUG] Super admin IDs from config: %v", superAdminIDs)
-	for _, id := range superAdminIDs {
+	for _, id := range s.config.SuperAdminUintIDs() {
 		if id == userID {
-			log.Printf("[DEBUG] User %d is super admin", userID)
 			return true
 		}
 	}
-	log.Printf("[DEBUG] User %d is not super admin", userID)
 	return false
 }
 
@@ -65,32 +60,29 @@ type TokenResponse struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-// ValidateToken validates a JWT token and returns its claims
+// ValidateToken validates a JWT and returns claims.
 func (s *AuthService) ValidateToken(tokenString string) (jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	claims := jwt.MapClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, &claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(s.config.JWT.Secret), nil
-	})
-
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return nil, err
 	}
-
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		return claims, nil
+	if !token.Valid {
+		return nil, errors.New("invalid token claims")
 	}
-
-	return nil, jwt.ErrInvalidKey
+	return claims, nil
 }
 
-// GetUserFromClaims retrieves user information from JWT claims
+// GetUserFromClaims loads the user from JWT claims.
 func (s *AuthService) GetUserFromClaims(ctx context.Context, claims jwt.MapClaims) (*models.User, error) {
-	// Get user_id from claims with type checking
 	userIDValue, exists := claims["user_id"]
 	if !exists {
-		log.Printf("[ERROR] user_id not found in claims")
+		logger.Warn(ctx, "jwt missing user_id claim")
 		return nil, errors.New("user_id not found in claims")
 	}
 
@@ -109,28 +101,23 @@ func (s *AuthService) GetUserFromClaims(ctx context.Context, claims jwt.MapClaim
 	case uint64:
 		userID = uint(v)
 	default:
-		log.Printf("[ERROR] invalid user_id type in claims: %T", userIDValue)
+		logger.Warn(ctx, "jwt invalid user_id type", "type", fmt.Sprintf("%T", userIDValue))
 		return nil, errors.New("invalid user_id type in claims")
 	}
 
-	log.Printf("[DEBUG] Getting user from claims, user_id: %d", userID)
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to find user by ID %d: %v", userID, err)
+		logger.Error(ctx, "jwt user lookup failed", "error", err, "user_id", userID)
 		return nil, err
 	}
 
-	// Set IsSuperAdmin field
 	user.IsSuperAdmin = s.IsSuperAdmin(user.ID)
-	log.Printf("[DEBUG] User %d IsSuperAdmin: %v", user.ID, user.IsSuperAdmin)
-
 	return user, nil
 }
 
 func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*TokenResponse, error) {
 	user, err := s.userRepo.FindByUsername(ctx, req.Username)
 	if err != nil {
-		// Record failed login attempt
 		if s.logSvc != nil {
 			s.logSvc.RecordLoginLog(ctx, 0, req.Username, "", "", 0, "user not found")
 		}
@@ -138,7 +125,6 @@ func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*TokenRespo
 	}
 
 	if user.Status == 0 {
-		// Record failed login attempt for inactive user
 		if s.logSvc != nil {
 			s.logSvc.RecordLoginLog(ctx, user.ID, user.Username, "", "", 0, "user is inactive")
 		}
@@ -146,29 +132,23 @@ func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*TokenRespo
 	}
 
 	if !s.validatePassword(user.Password, req.Password) {
-		// Record failed login attempt for invalid password
 		if s.logSvc != nil {
 			s.logSvc.RecordLoginLog(ctx, user.ID, user.Username, "", "", 0, "invalid password")
 		}
 		return nil, ErrInvalidCredentials
 	}
 
-	// Set IsSuperAdmin field
 	user.IsSuperAdmin = s.IsSuperAdmin(user.ID)
 
-	// Update last login time
 	if err := s.userRepo.UpdateLastLogin(ctx, user.ID); err != nil {
-		// Log error but don't fail the login
-		log.Printf("[WARN] Failed to update last login time: %v", err)
+		logger.Warn(ctx, "update last login failed", "error", err, "user_id", user.ID)
 	}
 
-	// Generate JWT token
 	token, err := s.generateToken(user)
 	if err != nil {
 		return nil, err
 	}
 
-	// Record successful login
 	if s.logSvc != nil {
 		s.logSvc.RecordLoginLog(ctx, user.ID, user.Username, "", "", 1, "login successful")
 	}
@@ -176,7 +156,7 @@ func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*TokenRespo
 	return &TokenResponse{
 		AccessToken: token,
 		TokenType:   "Bearer",
-		ExpiresIn:   s.config.JWT.ExpireTime, // ExpireTime is already in seconds
+		ExpiresIn:   s.config.JWT.ExpireTime,
 	}, nil
 }
 
@@ -186,24 +166,19 @@ func (s *AuthService) validatePassword(hashedPassword, plainPassword string) boo
 }
 
 func (s *AuthService) generateToken(user *models.User) (string, error) {
+	now := time.Now()
 	claims := jwt.MapClaims{
 		"user_id":  user.ID,
 		"username": user.Username,
-		"exp":      time.Now().Add(time.Second * time.Duration(s.config.JWT.ExpireTime)).Unix(),
+		"iat":      now.Unix(),
+		"exp":      now.Add(time.Second * time.Duration(s.config.JWT.ExpireTime)).Unix(),
+	}
+	if iss := strings.TrimSpace(s.config.JWT.Issuer); iss != "" {
+		claims["iss"] = iss
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(s.config.JWT.Secret))
-	if err != nil {
-		log.Printf("[ERROR] Failed to sign JWT token: %v", err)
-		return "", err
-	}
-
-	log.Printf("[DEBUG] Generated JWT token for user %d: %s", user.ID, tokenString)
-	log.Printf("[DEBUG] JWT token length: %d", len(tokenString))
-	log.Printf("[DEBUG] JWT token segments: %d", len(strings.Split(tokenString, ".")))
-
-	return tokenString, nil
+	return token.SignedString([]byte(s.config.JWT.Secret))
 }
 
 func (s *AuthService) HashPassword(password string) (string, error) {
@@ -214,7 +189,7 @@ func (s *AuthService) HashPassword(password string) (string, error) {
 	return string(hashedBytes), nil
 }
 
-// RefreshToken generates a new access token for the given user ID
+// RefreshToken issues a new access token for the user.
 func (s *AuthService) RefreshToken(ctx context.Context, userID uint) (string, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
@@ -225,26 +200,22 @@ func (s *AuthService) RefreshToken(ctx context.Context, userID uint) (string, er
 		return "", ErrUserInactive
 	}
 
-	// Set IsSuperAdmin field
 	user.IsSuperAdmin = s.IsSuperAdmin(user.ID)
-
 	return s.generateToken(user)
 }
 
-// GetConfig returns the JWT configuration
+// GetConfig returns application config (avoid exposing in new code; kept for handlers).
 func (s *AuthService) GetConfig() *config.Config {
 	return s.config
 }
 
-// Logout handles user logout and logs the action
+// Logout records logout.
 func (s *AuthService) Logout(ctx context.Context, userID uint) error {
-	// Get user information for logging
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 
-	// Record logout in login logs
 	if s.logSvc != nil {
 		return s.logSvc.RecordLoginLog(ctx, user.ID, user.Username, "", "", 1, "logout successful")
 	}

@@ -153,7 +153,7 @@ func NewManager(config Config) (*Manager, error) {
 	switch config.Driver {
 	case "redis":
 		driver, err = NewRedisQueue(config)
-	case "database", "mysql":
+	case "database", "mysql", "postgres", "postgresql", "pg":
 		driver, err = NewDatabaseQueue(config)
 	default:
 		return nil, ErrUnsupportedDriver

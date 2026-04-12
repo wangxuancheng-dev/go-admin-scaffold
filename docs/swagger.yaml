@@ -1,30 +1,85 @@
 basePath: /api
 definitions:
-  models.Permission:
+  handlers.UpdateUserRolesRequest:
     properties:
-      action:
+      role_ids:
+        items:
+          type: integer
+        type: array
+    required:
+    - role_ids
+    type: object
+  models.Menu:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/models.Menu'
+        type: array
+      component:
         type: string
       created_at:
+        description: 时间戳
         type: string
-      description:
-        type: string
-      display_name:
+      external:
+        type: boolean
+      icon:
         type: string
       id:
         type: integer
-      module:
+      keep_alive:
+        type: boolean
+      meta:
+        description: Meta 信息 (JSON)
         type: string
       name:
         type: string
-      resource:
+      parent:
+        allOf:
+        - $ref: '#/definitions/models.Menu'
+        description: 关联
+      parent_id:
+        type: integer
+      path:
+        type: string
+      permission:
+        description: 权限相关
         type: string
       roles:
         items:
           $ref: '#/definitions/models.Role'
         type: array
+      sort:
+        type: integer
       status:
         type: integer
+      title:
+        type: string
+      type:
+        type: integer
       updated_at:
+        type: string
+      visible:
+        type: integer
+    type: object
+  models.MenuMeta:
+    properties:
+      activeMenu:
+        type: string
+      affix:
+        type: boolean
+      alwaysShow:
+        type: boolean
+      breadcrumb:
+        type: boolean
+      hidden:
+        type: boolean
+      icon:
+        type: string
+      keepAlive:
+        type: boolean
+      noCache:
+        type: boolean
+      title:
         type: string
     type: object
   models.Role:
@@ -37,15 +92,15 @@ definitions:
         type: string
       id:
         type: integer
+      menus:
+        items:
+          $ref: '#/definitions/models.Menu'
+        type: array
       name:
         type: string
       perm_list:
         items:
           type: string
-        type: array
-      permissions:
-        items:
-          $ref: '#/definitions/models.Permission'
         type: array
       status:
         type: integer
@@ -55,6 +110,25 @@ definitions:
         items:
           $ref: '#/definitions/models.User'
         type: array
+    type: object
+  models.Todo:
+    properties:
+      completed:
+        type: boolean
+      created_at:
+        description: CreatedAt CustomTime `json:"created_at"`
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        description: UpdatedAt CustomTime `json:"updated_at"`
+        type: string
+    required:
+    - title
     type: object
   models.User:
     properties:
@@ -66,9 +140,10 @@ definitions:
         type: string
       id:
         type: integer
+      is_super_admin:
+        description: Virtual field, not stored in database
+        type: boolean
       nickname:
-        type: string
-      phone:
         type: string
       roles:
         items:
@@ -81,21 +156,19 @@ definitions:
       username:
         type: string
     type: object
-  response.PageData:
+  response.PagedList:
     properties:
-      list:
-        description: List data
+      items: {}
+      pagination:
+        $ref: '#/definitions/response.PaginationMeta'
+    type: object
+  response.PaginationMeta:
+    properties:
       page:
-        description: Current page
         type: integer
       page_size:
-        description: Page size
-        type: integer
-      pages:
-        description: Total pages
         type: integer
       total:
-        description: Total count
         type: integer
     type: object
   response.Response:
@@ -112,6 +185,53 @@ definitions:
         description: Trace ID for request tracking
         type: string
     type: object
+  services.CreateMenuRequest:
+    properties:
+      component:
+        type: string
+      external:
+        type: boolean
+      icon:
+        type: string
+      keep_alive:
+        type: boolean
+      meta:
+        $ref: '#/definitions/models.MenuMeta'
+      name:
+        type: string
+      parent_id:
+        type: integer
+      path:
+        type: string
+      permission:
+        type: string
+      role_ids:
+        items:
+          type: integer
+        type: array
+      sort:
+        type: integer
+      status:
+        type: integer
+      title:
+        type: string
+      type:
+        type: integer
+      visible:
+        type: integer
+    required:
+    - name
+    - title
+    type: object
+  services.CreateTodoRequest:
+    properties:
+      description:
+        type: string
+      title:
+        type: string
+    required:
+    - title
+    type: object
   services.CreateUserRequest:
     properties:
       avatar:
@@ -121,9 +241,6 @@ definitions:
       nickname:
         type: string
       password:
-        minLength: 6
-        type: string
-      phone:
         type: string
       role_ids:
         items:
@@ -132,13 +249,96 @@ definitions:
       status:
         type: integer
       username:
-        maxLength: 50
-        minLength: 3
         type: string
     required:
     - email
     - password
     - username
+    type: object
+  services.MenuMeta:
+    properties:
+      hidden:
+        type: boolean
+      icon:
+        type: string
+      keepAlive:
+        type: boolean
+      title:
+        type: string
+    type: object
+  services.MenuRouteItem:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/services.MenuRouteItem'
+        type: array
+      component:
+        type: string
+      id:
+        type: integer
+      meta:
+        $ref: '#/definitions/services.MenuMeta'
+      name:
+        type: string
+      path:
+        type: string
+      sort:
+        type: integer
+    type: object
+  services.UpdateMenuRequest:
+    properties:
+      component:
+        type: string
+      external:
+        type: boolean
+      icon:
+        type: string
+      keep_alive:
+        type: boolean
+      meta:
+        $ref: '#/definitions/models.MenuMeta'
+      name:
+        type: string
+      parent_id:
+        type: integer
+      path:
+        type: string
+      permission:
+        type: string
+      role_ids:
+        items:
+          type: integer
+        type: array
+      sort:
+        type: integer
+      status:
+        type: integer
+      title:
+        type: string
+      type:
+        type: integer
+      visible:
+        type: integer
+    type: object
+  services.UpdateTodoRequest:
+    properties:
+      completed:
+        type: boolean
+      description:
+        type: string
+      title:
+        type: string
+    required:
+    - title
+    type: object
+  v1.UpdateMenuRolesRequest:
+    properties:
+      role_ids:
+        items:
+          type: integer
+        type: array
+    required:
+    - role_ids
     type: object
   ws.Message:
     properties:
@@ -161,11 +361,408 @@ info:
   title: Go Admin Scaffold API
   version: "1.0"
 paths:
-  /admin/v1/users:
+  /admin/v1/i18n/locales:
     get:
       consumes:
       - application/json
-      description: Get a paginated list of users
+      description: Get list of supported locales
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+      summary: Get supported locales
+      tags:
+      - i18n
+  /admin/v1/i18n/translations:
+    get:
+      consumes:
+      - application/json
+      description: Get translation data for specified locale
+      parameters:
+      - description: Locale (e.g., zh, en)
+        in: query
+        name: locale
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties: true
+                  type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Get translations
+      tags:
+      - i18n
+  /admin/v1/menus:
+    get:
+      consumes:
+      - application/json
+      description: Get list of all menus
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.Menu'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: List menus
+      tags:
+      - menus
+    post:
+      consumes:
+      - application/json
+      description: Create a new menu
+      parameters:
+      - description: Menu data
+        in: body
+        name: menu
+        required: true
+        schema:
+          $ref: '#/definitions/services.CreateMenuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Menu'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Create menu
+      tags:
+      - menus
+  /admin/v1/menus/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete menu by ID
+      parameters:
+      - description: Menu ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Delete menu
+      tags:
+      - menus
+    get:
+      consumes:
+      - application/json
+      description: Get menu by ID
+      parameters:
+      - description: Menu ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Menu'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Get menu
+      tags:
+      - menus
+    put:
+      consumes:
+      - application/json
+      description: Update menu by ID
+      parameters:
+      - description: Menu ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Menu data
+        in: body
+        name: menu
+        required: true
+        schema:
+          $ref: '#/definitions/services.UpdateMenuRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Menu'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Update menu
+      tags:
+      - menus
+  /admin/v1/menus/{id}/roles:
+    put:
+      consumes:
+      - application/json
+      description: Update roles associated with a menu
+      parameters:
+      - description: Menu ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Role IDs
+        in: body
+        name: roles
+        required: true
+        schema:
+          $ref: '#/definitions/v1.UpdateMenuRolesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Update menu roles
+      tags:
+      - menus
+  /admin/v1/menus/tree:
+    get:
+      consumes:
+      - application/json
+      description: Get menu tree structure
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/models.Menu'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Get menu tree
+      tags:
+      - menus
+  /admin/v1/menus/user:
+    get:
+      consumes:
+      - application/json
+      description: Get menus accessible by current user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/services.MenuRouteItem'
+                  type: array
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Get user menus
+      tags:
+      - menus
+  /admin/v1/todos:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of todos
       parameters:
       - default: 1
         description: Page number
@@ -187,15 +784,212 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  allOf:
-                  - $ref: '#/definitions/response.PageData'
-                  - properties:
-                      list:
-                        items:
-                          $ref: '#/definitions/models.User'
-                        type: array
-                    type: object
+                  $ref: '#/definitions/response.PagedList'
               type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: List todos
+      tags:
+      - todos
+    post:
+      consumes:
+      - application/json
+      description: Create a new todo item
+      parameters:
+      - description: Todo info
+        in: body
+        name: todo
+        required: true
+        schema:
+          $ref: '#/definitions/services.CreateTodoRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Todo'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Create todo
+      tags:
+      - todos
+  /admin/v1/todos/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete todo by ID
+      parameters:
+      - description: Todo ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Delete todo
+      tags:
+      - todos
+    get:
+      consumes:
+      - application/json
+      description: Get todo by ID
+      parameters:
+      - description: Todo ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Todo'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Get todo
+      tags:
+      - todos
+    put:
+      consumes:
+      - application/json
+      description: Update todo by ID
+      parameters:
+      - description: Todo ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Todo info
+        in: body
+        name: todo
+        required: true
+        schema:
+          $ref: '#/definitions/services.UpdateTodoRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Todo'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - Bearer: []
+      summary: Update todo
+      tags:
+      - todos
+  /admin/v1/users:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of users with optional search filters
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Username filter
+        in: query
+        name: username
+        type: string
+      - description: Email filter
+        in: query
+        name: email
+        type: string
+      - description: Status filter (0=inactive, 1=active)
+        in: query
+        name: status
+        type: integer
+      - description: Role ID filter
+        in: query
+        name: role_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/response.PagedList'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
         "401":
           description: Unauthorized
           schema:
@@ -305,34 +1099,33 @@ paths:
       summary: Get user
       tags:
       - users
-  /upload/file:
-    post:
+  /admin/v1/users/{id}/roles:
+    put:
       consumes:
-      - multipart/form-data
-      description: Upload a file to storage (local or S3)
+      - application/json
+      description: Updates the roles assigned to a user
       parameters:
-      - description: File to upload
-        in: formData
-        name: file
+      - description: User ID
+        in: path
+        name: id
         required: true
-        type: file
-      - description: File type (image, document, video, audio)
-        in: formData
-        name: type
+        type: integer
+      - description: Role IDs
+        in: body
+        name: roles
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/handlers.UpdateUserRolesRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Upload file
+            $ref: '#/definitions/response.Response'
+      summary: Update user roles
       tags:
-      - Upload
+      - User
   /ws:
     get:
       consumes:

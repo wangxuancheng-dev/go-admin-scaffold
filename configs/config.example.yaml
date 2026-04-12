@@ -1,6 +1,6 @@
 app:
   name: "Go Admin"
-  env: "development"  # development, production, test
+  env: "development"  # production: disables /swagger/* and /api/test/* (dev-only routes)
   mode: "development"
   debug: true
   baseUrl: "http://localhost:8080"
@@ -11,12 +11,18 @@ server:
   address: "0.0.0.0:8080"
   mode: "debug"  # debug, release, test
 
-mysql:
+database:
+  # driver: mysql | postgres | postgresql | pg
+  driver: "mysql"
   host: "localhost"
-  port: 3306
+  port: "3306"
   username: "root"
   password: ""
   database: "go_admin"
+  charset: "utf8mb4"
+  # PostgreSQL only (DSN sslmode / TimeZone); ignored by MySQL
+  sslmode: "disable"   # e.g. require, verify-full
+  timezone: "UTC"      # e.g. Asia/Shanghai
   max_idle_conns: 10
   max_open_conns: 100
   conn_max_lifetime: 3600  # seconds
@@ -28,9 +34,14 @@ redis:
   db: 0
 
 jwt:
-  secret: "your-secret-key-here"  # Change this in production
+  # When app.env is production, secret must be at least 32 characters (enforced at startup).
+  secret: "change-me-use-at-least-32-chars-in-production"
   expire_time: 86400  # 24 hours
   issuer: "go-admin"
+
+super_admin:
+  # Numeric user IDs from your users table; loaded once at startup.
+  user_ids: ["1"]
 
 cache:
   driver: "redis"  # file, redis
@@ -50,10 +61,10 @@ queue:
   driver: "redis"
   # 默认队列名称
   queue: "default"
-  # 连接配置 (使用已配置的redis和mysql连接)
+  # 连接配置（占位符需与模板/工具一致；主服务 Redis 队列实际由 cfg 拼装连接串）
   connection:
     redis: "redis://{{.redis.host}}:{{.redis.port}}/{{.redis.db}}"
-    database: "mysql://{{.mysql.username}}:{{.mysql.password}}@{{.mysql.host}}:{{.mysql.port}}/{{.mysql.database}}?charset=utf8mb4&parseTime=True&loc=Local"
+    database: "mysql://{{.database.username}}:{{.database.password}}@{{.database.host}}:{{.database.port}}/{{.database.database}}?charset=utf8mb4&parseTime=True&loc=Local"
   # 工作进程配置
   worker:
     # 无任务时休眠时间(秒)
@@ -105,10 +116,13 @@ queue:
 
 log:
   level: "debug"  # debug, info, warn, error
-  filename: "storage/logs/app.log"
-  max_size: 100    # megabytes
+  filename: "storage/logs/app.log"  # daily: true -> app-YYYY-MM-DD.log, auto switch at local midnight
+  daily: true       # cross-day rotation without restart; same-day size limit still uses max_size
+  # IANA zone for calendar day boundary & max_age cleanup (e.g. Asia/Shanghai, UTC). Empty or "Local" = process default (TZ / OS).
+  timezone: "Asia/Shanghai"
+  max_size: 100     # megabytes per day file before lumberjack splits
   max_backups: 3
-  max_age: 28      # days
+  max_age: 28       # days; removes dated files older than this (daily mode)
   compress: true
 
 cors:
@@ -117,7 +131,7 @@ cors:
   allow_headers: ["Origin", "Content-Type", "Accept", "Authorization"]
   expose_headers: ["Content-Length"]
   allow_credentials: true
-  max_age: 86400  # seconds
+  max_age: 24h  # parsed with viper.GetDuration (time.Duration)
 
 i18n:
   default_locale: "en"

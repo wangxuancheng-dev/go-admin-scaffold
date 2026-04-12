@@ -18,6 +18,11 @@ func NewUserHandler(userSvc *services.UserService) *UserHandler {
 	}
 }
 
+// UpdateUserRolesRequest is the JSON body for PUT .../users/:id/roles (Swagger).
+type UpdateUserRolesRequest struct {
+	RoleIDs []uint `json:"role_ids" binding:"required"`
+}
+
 // UpdateUserRoles handles updating a user's roles
 // @Summary Update user roles
 // @Description Updates the roles assigned to a user
@@ -29,9 +34,7 @@ func NewUserHandler(userSvc *services.UserService) *UserHandler {
 // @Success 200 {object} response.Response
 // @Router /admin/v1/users/{id}/roles [put]
 func (h *UserHandler) UpdateUserRoles(c *gin.Context) {
-	var req struct {
-		RoleIDs []uint `json:"role_ids" binding:"required"`
-	}
+	var req UpdateUserRolesRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, err.Error())

@@ -9,9 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"app/internal/config"
 	"app/internal/core/services"
-
-	"github.com/spf13/viper"
 )
 
 var (
@@ -40,13 +39,12 @@ func main() {
 	// 解析命令行参数
 	flag.Parse()
 
-	// 加载配置
-	if err := loadConfig(configFile); err != nil {
+	cfg, err := config.LoadConfigFromFile(configFile)
+	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// 创建队列服务
-	queueService, err := services.NewQueueService()
+	queueService, err := services.NewQueueService(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create queue service: %v", err)
 	}
@@ -151,16 +149,3 @@ func main() {
 	}
 }
 
-// loadConfig 加载配置
-func loadConfig(configFile string) error {
-	// 设置配置文件
-	viper.SetConfigFile(configFile)
-	viper.AutomaticEnv()
-
-	// 读取配置
-	if err := viper.ReadInConfig(); err != nil {
-		return fmt.Errorf("failed to read config file: %v", err)
-	}
-
-	return nil
-}

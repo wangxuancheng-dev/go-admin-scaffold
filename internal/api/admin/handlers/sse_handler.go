@@ -3,6 +3,7 @@ package handlers
 import (
 	"app/internal/core/services"
 	"app/internal/core/sse"
+	"app/pkg/ginext"
 	"app/pkg/response"
 	"encoding/json"
 	"fmt"
@@ -37,8 +38,10 @@ func (h *SSEHandler) HandleSSE(c *gin.Context) {
 		return
 	}
 
-	// Validate token
-	authSvc := c.MustGet("authService").(*services.AuthService)
+	authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
+	if !ok {
+		return
+	}
 	claims, err := authSvc.ValidateToken(token)
 	if err != nil {
 		response.UnauthorizedError(c)

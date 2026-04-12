@@ -1,11 +1,12 @@
 package v1
 
 import (
-	"log"
 	"strconv"
 
 	"app/internal/core/models"
 	"app/internal/core/services"
+	"app/pkg/ginext"
+	"app/pkg/logger"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +25,10 @@ import (
 // @Security Bearer
 // @Router /admin/v1/menus [get]
 func ListMenus(c *gin.Context) {
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	menus, err := menuSvc.GetAll(c.Request.Context())
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to fetch menus")
@@ -47,7 +51,10 @@ func ListMenus(c *gin.Context) {
 // @Security Bearer
 // @Router /admin/v1/menus/tree [get]
 func GetMenuTree(c *gin.Context) {
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	tree, err := menuSvc.GetTree(c.Request.Context())
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to fetch menu tree")
@@ -69,33 +76,32 @@ func GetMenuTree(c *gin.Context) {
 // @Security Bearer
 // @Router /admin/v1/menus/user [get]
 func GetUserMenus(c *gin.Context) {
-	log.Printf("[DEBUG] GetUserMenus handler called")
+	ctx := c.Request.Context()
 
 	user, exists := c.Get("user")
 	if !exists {
-		log.Printf("[ERROR] User not found in context")
 		response.UnauthorizedError(c)
 		return
 	}
 
 	userModel, ok := user.(*models.User)
 	if !ok {
-		log.Printf("[ERROR] Failed to cast user to User model")
+		logger.Warn(ctx, "GetUserMenus: invalid user type in context")
 		response.UnauthorizedError(c)
 		return
 	}
 
-	log.Printf("[DEBUG] Getting menus for user ID: %d, IsSuperAdmin: %v", userModel.ID, userModel.IsSuperAdmin)
-
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
-	menus, err := menuSvc.GetUserMenus(c.Request.Context(), userModel.ID)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
+	menus, err := menuSvc.GetUserMenus(ctx, userModel.ID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to get user menus: %v", err)
+		logger.Error(ctx, "GetUserMenus failed", "error", err, "user_id", userModel.ID)
 		response.Error(c, response.CodeServerError, "failed to fetch user menus")
 		return
 	}
 
-	log.Printf("[DEBUG] Got %d menus for user %d", len(menus), userModel.ID)
 	response.Success(c, menus)
 }
 
@@ -120,7 +126,10 @@ func CreateMenu(c *gin.Context) {
 		return
 	}
 
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	menu, err := menuSvc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to create menu")
@@ -152,7 +161,10 @@ func GetMenu(c *gin.Context) {
 		return
 	}
 
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	menu, err := menuSvc.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
 		response.NotFoundError(c)
@@ -191,7 +203,10 @@ func UpdateMenu(c *gin.Context) {
 		return
 	}
 
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	menu, err := menuSvc.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to update menu")
@@ -223,7 +238,10 @@ func DeleteMenu(c *gin.Context) {
 		return
 	}
 
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	if err := menuSvc.Delete(c.Request.Context(), uint(id)); err != nil {
 		if err == services.ErrMenuHasChildren {
 			response.BusinessError(c, "cannot delete menu with children")
@@ -267,7 +285,10 @@ func UpdateMenuRoles(c *gin.Context) {
 		return
 	}
 
-	menuSvc := c.MustGet("menuService").(*services.MenuService)
+	menuSvc, ok := ginext.GetService[*services.MenuService](c, "menuService")
+	if !ok {
+		return
+	}
 	if err := menuSvc.UpdateMenuRoles(c.Request.Context(), uint(id), req.RoleIDs); err != nil {
 		if err == services.ErrMenuNotFound {
 			response.NotFoundError(c)

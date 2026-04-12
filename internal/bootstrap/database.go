@@ -6,27 +6,23 @@ import (
 
 	"app/internal/config"
 	"app/pkg/database"
-
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
-// SetupDatabase initializes the database connection
+// SetupDatabase initializes the database connection (MySQL or PostgreSQL per cfg.Database.Driver).
 func SetupDatabase(cfg *config.Config) error {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		cfg.Database.Username,
-		cfg.Database.Password,
-		cfg.Database.Host,
-		cfg.Database.Port,
-		cfg.Database.Database,
-	)
-
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+	db, err := database.OpenGorm(database.GormOpenConfig{
+		Driver:   cfg.Database.Driver,
+		Host:     cfg.Database.Host,
+		Port:     cfg.Database.Port,
+		Username: cfg.Database.Username,
+		Password: cfg.Database.Password,
+		Database: cfg.Database.Database,
+		Charset:  cfg.Database.Charset,
+		SSLMode:  cfg.Database.SSLMode,
+		TimeZone: cfg.Database.TimeZone,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("open database: %w", err)
 	}
 
 	sqlDB, err := db.DB()
@@ -34,12 +30,10 @@ func SetupDatabase(cfg *config.Config) error {
 		return err
 	}
 
-	// Set connection pool settings
 	sqlDB.SetMaxIdleConns(cfg.Database.MaxIdleConns)
 	sqlDB.SetMaxOpenConns(cfg.Database.MaxOpenConns)
 	sqlDB.SetConnMaxLifetime(time.Duration(cfg.Database.ConnMaxLifetime) * time.Second)
 
-	// Initialize the database package
 	database.Init(db)
 
 	return nil

@@ -1,12 +1,12 @@
 package v1
 
 import (
-	"fmt"
 	"strconv"
 
 	"app/internal/core/models"
 	"app/internal/core/services"
 	"app/internal/core/types"
+	"app/pkg/ginext"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +24,7 @@ import (
 // @Param email query string false "Email filter"
 // @Param status query int false "Status filter (0=inactive, 1=active)"
 // @Param role_id query int false "Role ID filter"
-// @Success 200 {object} response.Response{data=response.PageData}
+// @Success 200 {object} response.Response{data=response.PagedList}
 // @Failure 400 {object} response.Response
 // @Failure 401 {object} response.Response
 // @Failure 403 {object} response.Response
@@ -62,7 +62,10 @@ func ListUsers(c *gin.Context) {
 		PageSize: pageSize,
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	users, err := userSvc.ListWithFilters(c.Request.Context(), pagination, filters)
 	if err != nil {
 		response.ServerError(c)
@@ -98,7 +101,10 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	user, err := userSvc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to create user")
@@ -130,7 +136,10 @@ func GetUser(c *gin.Context) {
 		return
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	user, err := userSvc.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
 		response.NotFoundError(c)
@@ -154,7 +163,10 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	user, err := userSvc.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to update user")
@@ -172,7 +184,10 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	if err := userSvc.Delete(c.Request.Context(), uint(id)); err != nil {
 		response.Error(c, response.CodeServerError, "failed to delete user")
 		return
@@ -189,7 +204,10 @@ func ExportUsers(c *gin.Context) {
 		return
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	users, err := userSvc.ExportUserList(c.Request.Context(), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to export users")
@@ -216,7 +234,10 @@ func UpdateUserRoles(c *gin.Context) {
 		return
 	}
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	if err := userSvc.UpdateUserRoles(c.Request.Context(), uint(userID), req.RoleIDs); err != nil {
 		response.BusinessError(c, err.Error())
 		return
@@ -227,34 +248,28 @@ func UpdateUserRoles(c *gin.Context) {
 
 // UpdateUserStatus handles the request to update a user's status
 func UpdateUserStatus(c *gin.Context) {
-	traceID := c.GetString("trace_id")
-
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		fmt.Printf("[TRACE: %s] Invalid user ID parameter: %v\n", traceID, err)
 		response.ParamError(c, "invalid user ID")
 		return
 	}
-
-	fmt.Printf("[TRACE: %s] Starting to bind JSON for user %d\n", traceID, id)
 
 	var req struct {
 		Status *int `json:"status" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fmt.Printf("[TRACE: %s] Request binding failed for user %d: %v\n", traceID, id, err)
 		response.ValidationError(c, err.Error())
 		return
 	}
 
 	status := *req.Status
-	fmt.Printf("[TRACE: %s] Parsed status value: %d, type: %T\n", traceID, status, status)
-	fmt.Printf("[TRACE: %s] Updating user %d status to %d\n", traceID, id, status)
 
-	userSvc := c.MustGet("userService").(*services.UserService)
+	userSvc, ok := ginext.GetService[services.UserServiceAPI](c, "userService")
+	if !ok {
+		return
+	}
 	if err := userSvc.UpdateStatus(c.Request.Context(), uint(id), status); err != nil {
-		fmt.Printf("[TRACE: %s] Failed to update user %d status: %v\n", traceID, id, err)
 		if err == services.ErrSuperAdminModify {
 			response.BusinessError(c, "超级管理员账户状态不能修改")
 			return
@@ -263,6 +278,5 @@ func UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	fmt.Printf("[TRACE: %s] Successfully updated user %d status to %d\n", traceID, id, status)
 	response.Success(c, gin.H{"message": "User status updated successfully"})
 }

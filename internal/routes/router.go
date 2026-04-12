@@ -1,6 +1,10 @@
 package routes
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"app/internal/api/admin/handlers"
 	"app/internal/api/admin/middleware"
 	adminv1 "app/internal/api/admin/v1"
@@ -14,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"golang.org/x/time/rate"
 )
 
 // responseWriter wraps gin.ResponseWriter to track if response was written
@@ -33,14 +38,22 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 }
 
 // SetupRoutes configures all the routes for the application
-func SetupRoutes(r *gin.Engine, cfg *config.Config) {
-	// Global middleware
-	r.Use(middleware.Trace())               // Add trace middleware globally
+func SetupRoutes(r *gin.Engine, cfg *config.Config) error {
+	// Global middleware (Trace is applied in cmd/server/setup before routes)
 	r.Use(middleware.I18n())                // Add i18n middleware globally
 	r.Use(middleware.ServiceInjection(cfg)) // Add service injection middleware globally
 
-	// Swagger documentation
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// Swagger and dev-only test routes (avoid exposing in production)
+	if !strings.EqualFold(cfg.App.Env, "production") {
+		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+		test := r.Group("/api/test")
+		{
+			testHandler := corehandlers.NewTestHandler()
+			test.GET("/ratelimit", coremiddleware.RateLimit(0.2, 2), testHandler.RateLimitTest)
+			test.GET("/ratelimit2", coremiddleware.RateLimit(5, 10), testHandler.RateLimitTest)
+		}
+	}
 
 	// Serve static files
 	r.Static("/static", "./static")
@@ -51,10 +64,10 @@ func SetupRoutes(r *gin.Engine, cfg *config.Config) {
 		// Auth routes (no JWT protection needed)
 		auth := adminV1.Group("/auth")
 		{
-			auth.GET("/captcha", wrapHandler(adminv1.GetCaptcha))
-			auth.POST("/login", wrapHandler(adminv1.Login))
+			auth.GET("/captcha", coremiddleware.RateLimit(rate.Every(200*time.Millisecond), 40), wrapHandler(adminv1.GetCaptcha))
+			auth.POST("/login", coremiddleware.RateLimit(rate.Every(time.Second), 8), wrapHandler(adminv1.Login))
 			auth.POST("/logout", middleware.JWT(), wrapHandler(adminv1.Logout))
-			auth.POST("/refresh", middleware.JWT(), wrapHandler(adminv1.RefreshToken))
+			auth.POST("/refresh", middleware.JWT(), coremiddleware.RateLimit(rate.Every(200*time.Millisecond), 30), wrapHandler(adminv1.RefreshToken))
 		}
 
 		// WebSocket routes (no JWT middleware needed, token passed via query params)
@@ -158,13 +171,13 @@ func SetupRoutes(r *gin.Engine, cfg *config.Config) {
 			},
 		}
 
-		storage, err := storage.NewStorage(storageCfg)
+		uploadBackend, err := storage.NewStorage(storageCfg)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("init storage: %w", err)
 		}
 
 		// 创建上传处理器
-		uploadHandler := corehandlers.NewUploadHandler(storage)
+		uploadHandler := corehandlers.NewUploadHandler(uploadBackend)
 
 		// 上传相关路由
 		upload := adminV1Protected.Group("/upload")
@@ -193,6 +206,8 @@ func SetupRoutes(r *gin.Engine, cfg *config.Config) {
 		public := openV1.Group("/public")
 		{
 			public.GET("/health", wrapHandler(openv1.HealthCheck))
+			public.GET("/live", wrapHandler(openv1.Liveness))
+			public.GET("/ready", wrapHandler(openv1.Readiness))
 		}
 
 		// OAuth routes
@@ -203,15 +218,7 @@ func SetupRoutes(r *gin.Engine, cfg *config.Config) {
 		}
 	}
 
-	// 测试路由组
-	test := r.Group("/api/test")
-	{
-		testHandler := corehandlers.NewTestHandler()
-		// 添加限流中间件：每10秒2个请求 (rate=0.2, burst=2)
-		test.GET("/ratelimit", coremiddleware.RateLimit(0.2, 2), testHandler.RateLimitTest)
-		// 添加限流中间件：每5秒10个突发请求 (rate=5, burst=10)
-		test.GET("/ratelimit2", coremiddleware.RateLimit(5, 10), testHandler.RateLimitTest)
-	}
+	return nil
 }
 
 // wrapHandler wraps a gin.HandlerFunc to ensure consistent response handling

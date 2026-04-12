@@ -2,7 +2,7 @@ package i18n
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	defaultLocale = "en"
-	instance      *I18n
-	once          sync.Once
+	instance *I18n
+	once     sync.Once
+	initErr  error
 )
 
 // I18n represents the internationalization instance
@@ -30,18 +30,20 @@ type Config struct {
 	AvailableLocales []string `mapstructure:"available_locales"`
 }
 
-// New creates a new I18n instance
-func New(config *Config) *I18n {
+// Init loads translations once. Returns an error if loading fails (no panic).
+func Init(config *Config) error {
 	once.Do(func() {
-		instance = &I18n{
+		inst := &I18n{
 			defaultLocale: config.DefaultLocale,
 			translations:  make(map[string]map[string]interface{}),
 		}
-		if err := instance.loadTranslations(config.LoadPath); err != nil {
-			panic(fmt.Sprintf("Failed to load translations: %v", err))
+		if err := inst.loadTranslations(config.LoadPath); err != nil {
+			initErr = fmt.Errorf("i18n: %w", err)
+			return
 		}
+		instance = inst
 	})
-	return instance
+	return initErr
 }
 
 // GetInstance returns the singleton instance of I18n
@@ -132,14 +134,14 @@ func (i *I18n) loadTranslations(path string) error {
 	for _, file := range files {
 		locale := strings.TrimSuffix(filepath.Base(file), ".yml")
 
-		data, err := ioutil.ReadFile(file)
+		data, err := os.ReadFile(file)
 		if err != nil {
-			return fmt.Errorf("failed to read translation file %s: %v", file, err)
+			return fmt.Errorf("read translation file %s: %w", file, err)
 		}
 
 		var translations map[string]interface{}
 		if err := yaml.Unmarshal(data, &translations); err != nil {
-			return fmt.Errorf("failed to parse translation file %s: %v", file, err)
+			return fmt.Errorf("parse translation file %s: %w", file, err)
 		}
 
 		i.translations[locale] = translations

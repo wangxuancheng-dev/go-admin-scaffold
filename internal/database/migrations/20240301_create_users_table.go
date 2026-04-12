@@ -29,30 +29,22 @@ func (m *CreateUsersTable) Up(tx *gorm.DB) error {
 		return err
 	}
 
-	// Add indexes (check if they exist first)
-	var count int64
-
-	// Check and create idx_users_email
-	tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'idx_users_email'").Scan(&count)
-	if count == 0 {
-		if err := tx.Exec("CREATE INDEX idx_users_email ON users(email)").Error; err != nil {
+	for _, pair := range []struct {
+		name   string
+		create string
+	}{
+		{"idx_users_email", "CREATE INDEX idx_users_email ON users(email)"},
+		{"idx_users_status", "CREATE INDEX idx_users_status ON users(status)"},
+		{"idx_users_last_login_at", "CREATE INDEX idx_users_last_login_at ON users(last_login_at)"},
+	} {
+		ok, err := indexExists(tx, "users", pair.name)
+		if err != nil {
 			return err
 		}
-	}
-
-	// Check and create idx_users_status
-	tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'idx_users_status'").Scan(&count)
-	if count == 0 {
-		if err := tx.Exec("CREATE INDEX idx_users_status ON users(status)").Error; err != nil {
-			return err
-		}
-	}
-
-	// Check and create idx_users_last_login_at
-	tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'idx_users_last_login_at'").Scan(&count)
-	if count == 0 {
-		if err := tx.Exec("CREATE INDEX idx_users_last_login_at ON users(last_login_at)").Error; err != nil {
-			return err
+		if !ok {
+			if err := tx.Exec(pair.create).Error; err != nil {
+				return err
+			}
 		}
 	}
 
@@ -60,18 +52,9 @@ func (m *CreateUsersTable) Up(tx *gorm.DB) error {
 }
 
 func (m *CreateUsersTable) Down(tx *gorm.DB) error {
-	// Drop indexes first (MySQL compatible syntax)
-	if err := tx.Exec("ALTER TABLE users DROP INDEX idx_users_email").Error; err != nil {
-		// Ignore error if index doesn't exist
-	}
-	if err := tx.Exec("ALTER TABLE users DROP INDEX idx_users_status").Error; err != nil {
-		// Ignore error if index doesn't exist
-	}
-	if err := tx.Exec("ALTER TABLE users DROP INDEX idx_users_last_login_at").Error; err != nil {
-		// Ignore error if index doesn't exist
-	}
-
-	// Drop table
+	dropIndexBestEffort(tx, "users", "idx_users_email")
+	dropIndexBestEffort(tx, "users", "idx_users_status")
+	dropIndexBestEffort(tx, "users", "idx_users_last_login_at")
 	return tx.Migrator().DropTable("users")
 }
 

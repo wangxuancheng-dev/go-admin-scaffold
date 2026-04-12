@@ -3,96 +3,88 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"app/internal/config"
+	"app/pkg/logger"
 	"app/pkg/queue"
-
-	"github.com/spf13/viper"
 )
 
-// QueueService 队列服务
+// QueueService manages queue workers and jobs using application config (no global viper).
 type QueueService struct {
+	cfg     *config.Config
 	manager *queue.Manager
 	workers map[string]*queue.Worker
 	mu      sync.RWMutex
 }
 
-// NewQueueService 创建队列服务
-func NewQueueService() (*QueueService, error) {
-	// 加载配置
-	driver := viper.GetString("queue.driver")
-	queueName := viper.GetString("queue.queue")
+// NewQueueService builds a queue service from loaded config.
+func NewQueueService(cfg *config.Config) (*QueueService, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is required")
+	}
 
-	config := queue.Config{
-		Driver:  driver,
+	qc := queue.Config{
+		Driver:  cfg.Queue.Driver,
 		Options: make(map[string]interface{}),
 	}
 
-	// 根据驱动类型设置选项
-	switch driver {
+	switch cfg.Queue.Driver {
 	case "redis":
-		// 构建Redis连接字符串
-		redisHost := viper.GetString("redis.host")
-		redisPort := viper.GetInt("redis.port")
-		redisDB := viper.GetInt("redis.db")
-		redisPassword := viper.GetString("redis.password")
-
-		connectionStr := fmt.Sprintf("redis://%s:%d/%d", redisHost, redisPort, redisDB)
-		if redisPassword != "" {
-			connectionStr = fmt.Sprintf("redis://:%s@%s:%d/%d", redisPassword, redisHost, redisPort, redisDB)
+		redisPort := cfg.Redis.Port
+		if redisPort == "" {
+			redisPort = "6379"
 		}
+		connectionStr := fmt.Sprintf("redis://%s:%s/%d", cfg.Redis.Host, redisPort, cfg.Redis.DB)
+		if cfg.Redis.Password != "" {
+			connectionStr = fmt.Sprintf("redis://:%s@%s:%s/%d", cfg.Redis.Password, cfg.Redis.Host, redisPort, cfg.Redis.DB)
+		}
+		qc.Options["connection"] = connectionStr
+		qc.Options["queue"] = cfg.Queue.Queue
 
-		config.Options["connection"] = connectionStr
-		config.Options["queue"] = queueName
-
-	case "database", "mysql":
-		// 这里需要传入数据库连接实例
-		// 暂时返回错误，提示需要在外部传入数据库连接
+	case "database", "mysql", "postgres", "postgresql", "pg":
 		return nil, fmt.Errorf("database driver requires external database connection setup")
 
 	default:
-		return nil, fmt.Errorf("unsupported queue driver: %s", driver)
+		return nil, fmt.Errorf("unsupported queue driver: %s", cfg.Queue.Driver)
 	}
 
-	// 创建队列管理器
-	manager, err := queue.NewManager(config)
+	manager, err := queue.NewManager(qc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create queue manager: %v", err)
 	}
 
 	return &QueueService{
+		cfg:     cfg,
 		manager: manager,
 		workers: make(map[string]*queue.Worker),
 	}, nil
 }
 
-// Start 启动队列服务
+// Start launches workers according to cfg.Queue.Queues.
 func (s *QueueService) Start() error {
-	// 获取队列配置
-	queues := viper.GetStringMap("queue.queues")
-	if len(queues) == 0 {
+	if len(s.cfg.Queue.Queues) == 0 {
 		return fmt.Errorf("no queues configured")
 	}
 
-	// 启动每个队列的工作进程
-	for name, config := range queues {
-		queueConfig := config.(map[string]interface{})
-		processes := int(queueConfig["processes"].(int))
-
-		// 创建队列选项
-		options := queue.WorkerOptions{
-			Sleep:   time.Duration(viper.GetInt("queue.worker.sleep")) * time.Second,
-			MaxJobs: viper.GetInt64("queue.worker.max_jobs"),
-			MaxTime: time.Duration(viper.GetInt("queue.worker.max_time")) * time.Second,
-			Rest:    time.Duration(viper.GetInt("queue.worker.rest")) * time.Second,
-			Memory:  viper.GetInt64("queue.worker.memory"),
-			Tries:   viper.GetInt("queue.worker.tries"),
-			Timeout: time.Duration(viper.GetInt("queue.worker.timeout")) * time.Second,
+	wcfg := s.cfg.Queue.Worker
+	for name, qd := range s.cfg.Queue.Queues {
+		processes := qd.Processes
+		if processes < 1 {
+			processes = 1
 		}
 
-		// 启动指定数量的工作进程
+		options := queue.WorkerOptions{
+			Sleep:   time.Duration(wcfg.Sleep) * time.Second,
+			MaxJobs: int64(wcfg.MaxJobs),
+			MaxTime: time.Duration(wcfg.MaxTime) * time.Second,
+			Rest:    time.Duration(wcfg.Rest) * time.Second,
+			Memory:  int64(wcfg.Memory),
+			Tries:   wcfg.Tries,
+			Timeout: time.Duration(wcfg.Timeout) * time.Second,
+		}
+
 		for i := 0; i < processes; i++ {
 			worker := queue.NewWorker(s.manager, []string{name}, options)
 			workerName := fmt.Sprintf("%s-%d", name, i+1)
@@ -101,14 +93,13 @@ func (s *QueueService) Start() error {
 			s.workers[workerName] = worker
 			s.mu.Unlock()
 
-			// 启动工作进程
-			go func(w *queue.Worker, name string) {
-				log.Printf("Starting queue worker: %s", name)
+			go func(w *queue.Worker, wname string) {
+				logger.Sugared().Infow("queue worker started", "worker", wname)
 				w.Start()
-				log.Printf("Queue worker stopped: %s", name)
+				logger.Sugared().Infow("queue worker stopped", "worker", wname)
 
 				s.mu.Lock()
-				delete(s.workers, name)
+				delete(s.workers, wname)
 				s.mu.Unlock()
 			}(worker, workerName)
 		}
@@ -117,79 +108,71 @@ func (s *QueueService) Start() error {
 	return nil
 }
 
-// Stop 停止队列服务
+// Stop stops all workers.
 func (s *QueueService) Stop() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// 停止所有工作进程
 	for name, worker := range s.workers {
-		log.Printf("Stopping queue worker: %s", name)
+		logger.Sugared().Infow("stopping queue worker", "worker", name)
 		worker.Stop()
 	}
 }
 
-// Push 推送任务到队列
+// Push pushes a job to the queue.
 func (s *QueueService) Push(ctx context.Context, job queue.JobInterface) error {
 	return s.manager.Push(ctx, job)
 }
 
-// PushRaw 推送原始数据到队列
-func (s *QueueService) PushRaw(ctx context.Context, queue string, payload []byte, options map[string]interface{}) error {
-	return s.manager.PushRaw(ctx, queue, payload, options)
+// PushRaw pushes raw payload to a queue.
+func (s *QueueService) PushRaw(ctx context.Context, q string, payload []byte, options map[string]interface{}) error {
+	return s.manager.PushRaw(ctx, q, payload, options)
 }
 
-// Later 延迟推送任务
+// Later schedules a delayed job.
 func (s *QueueService) Later(ctx context.Context, job queue.JobInterface, delay time.Duration) error {
 	return s.manager.Later(ctx, job, delay)
 }
 
-// Pop 从队列中取出任务
-func (s *QueueService) Pop(ctx context.Context, queue string) (queue.JobInterface, error) {
-	return s.manager.Pop(ctx, queue)
+// Pop pops a job from the queue.
+func (s *QueueService) Pop(ctx context.Context, q string) (queue.JobInterface, error) {
+	return s.manager.Pop(ctx, q)
 }
 
-// Size 获取队列大小
-func (s *QueueService) Size(ctx context.Context, queue string) (int64, error) {
-	return s.manager.Size(ctx, queue)
+// Size returns queue length.
+func (s *QueueService) Size(ctx context.Context, q string) (int64, error) {
+	return s.manager.Size(ctx, q)
 }
 
-// Delete 删除任务
-func (s *QueueService) Delete(ctx context.Context, queue string, job queue.JobInterface) error {
-	return s.manager.Delete(ctx, queue, job)
+// Delete removes a job.
+func (s *QueueService) Delete(ctx context.Context, q string, job queue.JobInterface) error {
+	return s.manager.Delete(ctx, q, job)
 }
 
-// Release 释放任务回队列
-func (s *QueueService) Release(ctx context.Context, queue string, job queue.JobInterface, delay time.Duration) error {
-	return s.manager.Release(ctx, queue, job, delay)
+// Release returns a job to the queue after delay.
+func (s *QueueService) Release(ctx context.Context, q string, job queue.JobInterface, delay time.Duration) error {
+	return s.manager.Release(ctx, q, job, delay)
 }
 
-// Clear 清空队列
-func (s *QueueService) Clear(ctx context.Context, queue string) error {
-	return s.manager.Clear(ctx, queue)
+// Clear empties a queue.
+func (s *QueueService) Clear(ctx context.Context, q string) error {
+	return s.manager.Clear(ctx, q)
 }
 
-// GetWorkerCount 获取工作进程数量
+// GetWorkerCount returns running worker count.
 func (s *QueueService) GetWorkerCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.workers)
 }
 
-// GetActiveQueues 获取活动队列列表
+// GetActiveQueues returns worker instance names currently registered.
 func (s *QueueService) GetActiveQueues() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	queues := make(map[string]struct{})
+	out := make([]string, 0, len(s.workers))
 	for name := range s.workers {
-		queues[name] = struct{}{}
+		out = append(out, name)
 	}
-
-	result := make([]string, 0, len(queues))
-	for name := range queues {
-		result = append(result, name)
-	}
-
-	return result
+	return out
 }

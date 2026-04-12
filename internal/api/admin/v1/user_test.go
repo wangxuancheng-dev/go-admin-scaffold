@@ -11,15 +11,21 @@ import (
 
 	"app/internal/core/models"
 	"app/internal/core/services"
+	"app/internal/core/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
-// MockUserService is a mock implementation of UserService
+// MockUserService is a mock implementation of services.UserServiceAPI
 type MockUserService struct {
 	mock.Mock
+}
+
+func (m *MockUserService) ListWithFilters(ctx context.Context, pagination *models.Pagination, filters *types.UserSearchFilters) ([]models.User, error) {
+	args := m.Called(ctx, pagination, filters)
+	return args.Get(0).([]models.User), args.Error(1)
 }
 
 func (m *MockUserService) Create(ctx context.Context, req *services.CreateUserRequest) (*models.User, error) {
@@ -51,14 +57,24 @@ func (m *MockUserService) GetByID(ctx context.Context, id uint) (*models.User, e
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
-func (m *MockUserService) List(ctx context.Context, pagination *models.Pagination) ([]models.User, error) {
-	args := m.Called(ctx, pagination)
-	return args.Get(0).([]models.User), args.Error(1)
-}
-
 func (m *MockUserService) ExportUserList(ctx context.Context, req *services.ExportUserListRequest) ([]models.User, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).([]models.User), args.Error(1)
+}
+
+func (m *MockUserService) UpdateUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
+	args := m.Called(ctx, userID, roleIDs)
+	return args.Error(0)
+}
+
+func (m *MockUserService) UpdateStatus(ctx context.Context, id uint, status int) error {
+	args := m.Called(ctx, id, status)
+	return args.Error(0)
+}
+
+func (m *MockUserService) IsSuperAdmin(userID uint) bool {
+	args := m.Called(userID)
+	return args.Bool(0)
 }
 
 func setupTestRouter() (*gin.Engine, *MockUserService) {
@@ -75,22 +91,15 @@ func TestListUsers(t *testing.T) {
 	r, mockSvc := setupTestRouter()
 	r.GET("/users", ListUsers)
 
-	// Test case 1: Successful list
 	users := []models.User{
-		{
-			ID:       1,
-			Username: "user1",
-			Email:    "user1@example.com",
-		},
-		{
-			ID:       2,
-			Username: "user2",
-			Email:    "user2@example.com",
-		},
+		{ID: 1, Username: "user1", Email: "user1@example.com"},
+		{ID: 2, Username: "user2", Email: "user2@example.com"},
 	}
 
-	mockSvc.On("List", mock.Anything, mock.AnythingOfType("*models.Pagination")).
+	mockSvc.On("ListWithFilters", mock.Anything, mock.AnythingOfType("*models.Pagination"), mock.AnythingOfType("*types.UserSearchFilters")).
 		Return(users, nil)
+	mockSvc.On("IsSuperAdmin", uint(1)).Return(false)
+	mockSvc.On("IsSuperAdmin", uint(2)).Return(false)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/users?page=1&page_size=10", nil)
@@ -101,15 +110,16 @@ func TestListUsers(t *testing.T) {
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
-	assert.NotNil(t, response["data"])
-	assert.NotNil(t, response["pagination"])
+	data, ok := response["data"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.NotNil(t, data["items"])
+	assert.NotNil(t, data["pagination"])
 }
 
 func TestExportUsers(t *testing.T) {
 	r, mockSvc := setupTestRouter()
 	r.POST("/users/export", ExportUsers)
 
-	// Test case 1: Successful export
 	now := time.Now()
 	req := services.ExportUserListRequest{
 		Username:  "user",
@@ -119,25 +129,13 @@ func TestExportUsers(t *testing.T) {
 		EndTime:   now,
 	}
 
-	users := []models.User{
-		{
-			ID:       1,
-			Username: "user1",
-			Email:    "user1@example.com",
-			Status:   1,
-			Roles:    []models.Role{{Name: "admin"}},
-		},
-		{
-			ID:       2,
-			Username: "user2",
-			Email:    "user2@example.com",
-			Status:   1,
-			Roles:    []models.Role{{Name: "user"}},
-		},
+	exported := []models.User{
+		{ID: 1, Username: "user1", Email: "user1@example.com", Status: 1, Roles: []models.Role{{Name: "admin"}}},
+		{ID: 2, Username: "user2", Email: "user2@example.com", Status: 1, Roles: []models.Role{{Name: "user"}}},
 	}
 
 	mockSvc.On("ExportUserList", mock.Anything, mock.AnythingOfType("*services.ExportUserListRequest")).
-		Return(users, nil)
+		Return(exported, nil)
 
 	body, _ := json.Marshal(req)
 	w := httptest.NewRecorder()
@@ -151,7 +149,7 @@ func TestExportUsers(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 	assert.Equal(t, float64(0), response["code"])
-	assert.Equal(t, "success", response["msg"])
+	assert.Equal(t, "success", response["message"])
 
 	data, ok := response["data"].([]interface{})
 	assert.True(t, ok)
@@ -162,7 +160,6 @@ func TestCreateUser(t *testing.T) {
 	r, mockSvc := setupTestRouter()
 	r.POST("/users", CreateUser)
 
-	// Test case 1: Successful creation
 	req := services.CreateUserRequest{
 		Username: "testuser",
 		Password: "password123",
@@ -188,20 +185,23 @@ func TestCreateUser(t *testing.T) {
 	httpReq.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, httpReq)
 
-	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response models.User
-	err := json.Unmarshal(w.Body.Bytes(), &response)
+	var envelope struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	err := json.Unmarshal(w.Body.Bytes(), &envelope)
 	assert.NoError(t, err)
-	assert.Equal(t, createdUser.Username, response.Username)
-	assert.Equal(t, createdUser.Email, response.Email)
+	assert.Equal(t, 0, envelope.Code)
+	assert.Equal(t, createdUser.Username, envelope.Data["username"])
+	assert.Equal(t, createdUser.Email, envelope.Data["email"])
 }
 
 func TestUpdateUser(t *testing.T) {
 	r, mockSvc := setupTestRouter()
 	r.PUT("/users/:id", UpdateUser)
 
-	// Test case 1: Successful update
 	req := services.UpdateUserRequest{
 		Nickname: "Updated User",
 		Email:    "updated@example.com",
@@ -227,23 +227,33 @@ func TestUpdateUser(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response models.User
-	err := json.Unmarshal(w.Body.Bytes(), &response)
+	var envelope struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	err := json.Unmarshal(w.Body.Bytes(), &envelope)
 	assert.NoError(t, err)
-	assert.Equal(t, updatedUser.Nickname, response.Nickname)
-	assert.Equal(t, updatedUser.Email, response.Email)
+	assert.Equal(t, 0, envelope.Code)
+	assert.Equal(t, updatedUser.Nickname, envelope.Data["nickname"])
+	assert.Equal(t, updatedUser.Email, envelope.Data["email"])
 }
 
 func TestDeleteUser(t *testing.T) {
 	r, mockSvc := setupTestRouter()
 	r.DELETE("/users/:id", DeleteUser)
 
-	// Test case 1: Successful deletion
 	mockSvc.On("Delete", mock.Anything, uint(1)).Return(nil)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("DELETE", "/users/1", nil)
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var envelope struct {
+		Code int `json:"code"`
+	}
+	err := json.Unmarshal(w.Body.Bytes(), &envelope)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, envelope.Code)
 }

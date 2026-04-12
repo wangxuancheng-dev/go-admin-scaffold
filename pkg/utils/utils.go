@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 // StringSliceContains checks if a string slice contains a specific string
@@ -131,24 +133,25 @@ func ExtractNumbers(str string) []int {
 	return numbers
 }
 
-// IsValidPhoneNumber checks if a string is a valid phone number
+// IsValidPhoneNumber checks if a string is a valid phone number (E.164-style: 10–15 digits, optional +).
 func IsValidPhoneNumber(phone string) bool {
-	pattern := `^\+?[1-9]\d{1,14}$`
-	re := regexp.MustCompile(pattern)
-	return re.MatchString(phone)
+	s := strings.TrimSpace(phone)
+	if s == "" {
+		return false
+	}
+	if strings.HasPrefix(s, "+") {
+		s = s[1:]
+	}
+	phoneDigitsOnly := regexp.MustCompile(`^[1-9]\d+$`)
+	if !phoneDigitsOnly.MatchString(s) {
+		return false
+	}
+	return len(s) >= 10 && len(s) <= 15
 }
 
-// RemoveDuplicates removes duplicate strings from a slice
+// RemoveDuplicates removes duplicate strings from a slice (order of first occurrence kept).
 func RemoveDuplicates(slice []string) []string {
-	keys := make(map[string]bool)
-	var list []string
-	for _, entry := range slice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
-		}
-	}
-	return list
+	return lo.Uniq(slice)
 }
 
 // ReverseString reverses a string

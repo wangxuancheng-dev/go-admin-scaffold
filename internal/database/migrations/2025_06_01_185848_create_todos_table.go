@@ -21,41 +21,34 @@ func init() {
 			DeletedAt gorm.DeletedAt `gorm:"index;type:timestamp"`
 		}
 
-		// Create todos table
 		if err := tx.AutoMigrate(&Todo{}); err != nil {
 			return err
 		}
 
-		// Add indexes (check if they exist first)
-		var count int64
-
-		// Check and create idx_todos_user_id
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'todos' AND index_name = 'idx_todos_user_id'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_todos_user_id ON todos(user_id)").Error; err != nil {
+		for _, pair := range []struct {
+			name   string
+			create string
+		}{
+			{"idx_todos_user_id", "CREATE INDEX idx_todos_user_id ON todos(user_id)"},
+			{"idx_todos_status", "CREATE INDEX idx_todos_status ON todos(status)"},
+			{"idx_todos_due_date", "CREATE INDEX idx_todos_due_date ON todos(due_date)"},
+		} {
+			ok, err := indexExists(tx, "todos", pair.name)
+			if err != nil {
 				return err
+			}
+			if !ok {
+				if err := tx.Exec(pair.create).Error; err != nil {
+					return err
+				}
 			}
 		}
 
-		// Check and create idx_todos_status
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'todos' AND index_name = 'idx_todos_status'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_todos_status ON todos(status)").Error; err != nil {
-				return err
-			}
+		ok, err := fkConstraintExists(tx, "todos", "fk_todos_user_id")
+		if err != nil {
+			return err
 		}
-
-		// Check and create idx_todos_due_date
-		tx.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'todos' AND index_name = 'idx_todos_due_date'").Scan(&count)
-		if count == 0 {
-			if err := tx.Exec("CREATE INDEX idx_todos_due_date ON todos(due_date)").Error; err != nil {
-				return err
-			}
-		}
-
-		// Add foreign key constraint (check if it exists first)
-		tx.Raw("SELECT COUNT(*) FROM information_schema.key_column_usage WHERE table_schema = DATABASE() AND table_name = 'todos' AND constraint_name = 'fk_todos_user_id'").Scan(&count)
-		if count == 0 {
+		if !ok {
 			if err := tx.Exec("ALTER TABLE todos ADD CONSTRAINT fk_todos_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE").Error; err != nil {
 				return err
 			}
@@ -65,23 +58,10 @@ func init() {
 	}
 
 	down := func(tx *gorm.DB) error {
-		// Drop foreign key first (MySQL compatible syntax)
-		if err := tx.Exec("ALTER TABLE todos DROP FOREIGN KEY fk_todos_user_id").Error; err != nil {
-			// Ignore error if foreign key doesn't exist
-		}
-
-		// Drop indexes (MySQL compatible syntax)
-		if err := tx.Exec("ALTER TABLE todos DROP INDEX idx_todos_user_id").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-		if err := tx.Exec("ALTER TABLE todos DROP INDEX idx_todos_status").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-		if err := tx.Exec("ALTER TABLE todos DROP INDEX idx_todos_due_date").Error; err != nil {
-			// Ignore error if index doesn't exist
-		}
-
-		// Drop table
+		dropForeignKeyBestEffort(tx, "todos", "fk_todos_user_id")
+		dropIndexBestEffort(tx, "todos", "idx_todos_user_id")
+		dropIndexBestEffort(tx, "todos", "idx_todos_status")
+		dropIndexBestEffort(tx, "todos", "idx_todos_due_date")
 		return tx.Migrator().DropTable("todos")
 	}
 

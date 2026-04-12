@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,14 +11,14 @@ import (
 
 	"app/cmd/server/setup"
 	_ "app/docs" // 导入 swagger 文档
-	"app/internal/bootstrap"
 	"app/internal/commands"
 	"app/internal/config"
 	"app/internal/schedule"
 	"app/pkg/console"
+	"app/pkg/database"
 	"app/pkg/locker"
-
-	"github.com/redis/go-redis/v9"
+	"app/pkg/logger"
+	"app/pkg/redis"
 )
 
 // @title Go Admin Scaffold API
@@ -34,51 +33,33 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Initialize database
-	if err := bootstrap.SetupDatabase(cfg); err != nil {
-		log.Fatal(err)
+	// Initialize the HTTP server (database, Redis, cache, logger, routes)
+	app, err := setup.InitializeApp()
+	if err != nil {
+		log.Fatalf("Failed to initialize app: %v", err)
 	}
 
-	// Initialize Redis client
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
+	// Scheduler uses the same Redis client as the app
+	redisLocker := locker.NewRedisLocker(redis.GetClient())
 
-	// Create Redis locker
-	redisLocker := locker.NewRedisLocker(redisClient)
-
-	// Create command manager for scheduled tasks
 	manager := console.NewManager()
-
-	// Register commands that can be scheduled
 	manager.Register(commands.NewHelloWorldCommand())
 	manager.Register(commands.NewMigrateCommand())
 	manager.Register(commands.NewSeedCommand())
 	manager.Register(commands.NewSendEmailsCommand())
 	manager.Register(commands.NewMakeCommand())
 
-	// Create and start scheduler with Redis locker
 	scheduler := schedule.NewScheduler(manager, redisLocker)
 	kernel := schedule.NewKernel(scheduler)
 
-	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start scheduler in a goroutine
 	go func() {
 		if err := kernel.Start(ctx); err != nil {
 			log.Printf("Scheduler error: %v", err)
 		}
 	}()
-
-	// Initialize the HTTP server
-	app, err := setup.InitializeApp()
-	if err != nil {
-		log.Fatalf("Failed to initialize app: %v", err)
-	}
 
 	// Start HTTP server in a goroutine
 	srv := &http.Server{
@@ -114,9 +95,16 @@ func main() {
 	log.Println("Shutting down scheduler...")
 	kernel.Stop()
 
-	// Close Redis client
-	if err := redisClient.Close(); err != nil {
+	if err := redis.Close(); err != nil {
 		log.Printf("Error closing Redis client: %v", err)
+	}
+
+	if err := database.Close(); err != nil {
+		log.Printf("Error closing database: %v", err)
+	}
+
+	if err := logger.Close(); err != nil {
+		log.Printf("Error closing logger: %v", err)
 	}
 
 	log.Println("Server exited")

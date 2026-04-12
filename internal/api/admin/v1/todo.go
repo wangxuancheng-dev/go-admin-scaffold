@@ -5,6 +5,7 @@ import (
 
 	"app/internal/core/models"
 	"app/internal/core/services"
+	"app/pkg/ginext"
 	"app/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -29,7 +30,10 @@ func CreateTodo(c *gin.Context) {
 		return
 	}
 
-	todoSvc := c.MustGet("todoService").(*services.TodoService)
+	todoSvc, ok := ginext.GetService[*services.TodoService](c, "todoService")
+	if !ok {
+		return
+	}
 	todo, err := todoSvc.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to create todo")
@@ -47,7 +51,7 @@ func CreateTodo(c *gin.Context) {
 // @Produce json
 // @Param page query int false "Page number" default(1)
 // @Param page_size query int false "Page size" default(10)
-// @Success 200 {object} response.Response{data=response.PageData{list=[]models.Todo}}
+// @Success 200 {object} response.Response{data=response.PagedList}
 // @Failure 500 {object} response.Response
 // @Security Bearer
 // @Router /admin/v1/todos [get]
@@ -60,7 +64,10 @@ func ListTodos(c *gin.Context) {
 		PageSize: pageSize,
 	}
 
-	todoSvc := c.MustGet("todoService").(*services.TodoService)
+	todoSvc, ok := ginext.GetService[*services.TodoService](c, "todoService")
+	if !ok {
+		return
+	}
 	todos, err := todoSvc.List(c.Request.Context(), pagination)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to fetch todos")
@@ -89,7 +96,10 @@ func GetTodo(c *gin.Context) {
 		return
 	}
 
-	todoSvc := c.MustGet("todoService").(*services.TodoService)
+	todoSvc, ok := ginext.GetService[*services.TodoService](c, "todoService")
+	if !ok {
+		return
+	}
 	todo, err := todoSvc.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
 		response.NotFoundError(c)
@@ -126,7 +136,10 @@ func UpdateTodo(c *gin.Context) {
 		return
 	}
 
-	todoSvc := c.MustGet("todoService").(*services.TodoService)
+	todoSvc, ok := ginext.GetService[*services.TodoService](c, "todoService")
+	if !ok {
+		return
+	}
 	todo, err := todoSvc.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to update todo")
@@ -155,7 +168,10 @@ func DeleteTodo(c *gin.Context) {
 		return
 	}
 
-	todoSvc := c.MustGet("todoService").(*services.TodoService)
+	todoSvc, ok := ginext.GetService[*services.TodoService](c, "todoService")
+	if !ok {
+		return
+	}
 	if err := todoSvc.Delete(c.Request.Context(), uint(id)); err != nil {
 		response.Error(c, response.CodeServerError, "failed to delete todo")
 		return
