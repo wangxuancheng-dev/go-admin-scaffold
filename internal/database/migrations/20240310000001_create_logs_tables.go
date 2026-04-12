@@ -124,5 +124,5 @@ func init() {
 		return tx.Migrator().DropTable("operation_logs")
 	}
 
-	Register("create_logs_tables", NewMigration("20240310_create_logs_tables.go", up, down))
+	Register("create_logs_tables", NewMigration("20240310000001_create_logs_tables.go", up, down))
 }

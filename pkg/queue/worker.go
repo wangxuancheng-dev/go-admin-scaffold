@@ -23,6 +23,8 @@ type Worker struct {
 
 // WorkerOptions 工作进程选项
 type WorkerOptions struct {
+	// ConsumerName Redis Streams 下 XREADGROUP 的 consumer（多进程需唯一，默认不填则由驱动生成）
+	ConsumerName string
 	// Sleep 无任务时休眠时间
 	Sleep time.Duration
 	// MaxJobs 最大处理任务数
@@ -153,6 +155,9 @@ func (w *Worker) run() {
 // processNextJob 处理下一个任务
 func (w *Worker) processNextJob() (JobInterface, error) {
 	ctx := context.Background()
+	if w.options.ConsumerName != "" {
+		ctx = WithRedisConsumer(ctx, w.options.ConsumerName)
+	}
 
 	// 遍历所有队列
 	for _, queue := range w.queues {

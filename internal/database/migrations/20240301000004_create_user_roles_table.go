@@ -63,5 +63,5 @@ func init() {
 		return tx.Migrator().DropTable("user_roles")
 	}
 
-	Register("create_user_roles_table", NewMigration("20240303_create_user_roles_table.go", up, down))
+	Register("create_user_roles_table", NewMigration("20240301000004_create_user_roles_table.go", up, down))
 }

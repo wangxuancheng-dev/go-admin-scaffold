@@ -12,8 +12,59 @@
 - 任务优先级管理
 - 失败重试机制
 - 任务超时控制
+- **唯一队列（Unique Job）**：同一队列 + 相同业务键在排队/处理未结束前只接受一次入队（见下文）
 - 任务状态监控
 - 命令行工具支持
+
+## 唯一队列（Unique Job）
+
+与 [定时任务里的 `.Unique()`](scheduling.md#分布式环境) **不是同一概念**：那里是多机调度时只有一个实例跑 **Cron**；这里是 **异步队列** 里按业务键（如订单号）去重，类似 Laravel `ShouldBeUnique`。
+
+### 结构体任务：设置 `BaseJob.UniqueKey`
+
+项目内示例见 `internal/core/jobs/example_job.go` 中的 `ProcessOrderJob` / `NewProcessOrderJob`：
+
+```go
+import (
+    "errors"
+    "app/internal/core/jobs"
+    "app/pkg/queue"
+)
+
+job := jobs.NewProcessOrderJob("20250412001", "recalculate_total")
+if err := queueService.Push(ctx, job); err != nil {
+    if errors.Is(err, queue.ErrDuplicateJob) {
+        // 同一订单任务已在队列或执行中，可按 409 等语义返回
+        return err
+    }
+    return err
+}
+```
+
+也可用 `queue.NewBaseJob` 的 `options` 传入 `"unique_key"`（字符串）。
+
+### `PushRaw` 与 options
+
+```go
+payload := []byte(`{"queue":"default","message":"ping"}`)
+err := queueService.PushRaw(ctx, "default", payload, map[string]interface{}{
+    "unique_key": "raw:order:20250412001",
+})
+// 若 payload 为 JSON 对象且不含 unique_key，驱动会把 options 里的键合并进 payload，便于完成后释放 Redis 锁 / DB 唯一约束
+```
+
+### 配置：Redis 锁 TTL
+
+在应用配置中（秒）：
+
+```yaml
+queue:
+  unique_ttl: 86400   # 可选；0 或未设置则使用驱动默认（约 24h 或与任务 timeout 相关）
+```
+
+### 返回值
+
+重复入队时返回 `queue.ErrDuplicateJob`，请使用 `errors.Is(err, queue.ErrDuplicateJob)` 判断。
 
 ## 配置说明
 

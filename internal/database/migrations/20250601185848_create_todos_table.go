@@ -65,5 +65,5 @@ func init() {
 		return tx.Migrator().DropTable("todos")
 	}
 
-	Register("create_todos_table", NewMigration("2025_06_01_185848_create_todos_table.go", up, down))
+	Register("create_todos_table", NewMigration("20250601185848_create_todos_table.go", up, down))
 }

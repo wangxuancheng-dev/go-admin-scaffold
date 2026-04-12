@@ -100,9 +100,12 @@ type CacheConfig struct {
 
 // QueueConfig holds queue configuration
 type QueueConfig struct {
-	Driver     string `mapstructure:"driver"`
-	Queue      string `mapstructure:"queue"`
-	Connection struct {
+	Driver      string `mapstructure:"driver"`
+	Queue       string `mapstructure:"queue"`
+	StreamGroup string `mapstructure:"stream_group"` // redis: XREADGROUP consumer group name (default queue_workers)
+	// UniqueTTL 秒；Redis 唯一任务锁 TTL（0 表示由驱动默认，如 24h 或与任务超时相关）
+	UniqueTTL int `mapstructure:"unique_ttl"`
+	Connection  struct {
 		Redis    string `mapstructure:"redis"`
 		Database string `mapstructure:"database"`
 	} `mapstructure:"connection"`
@@ -231,6 +234,8 @@ func populateConfigFromViper(v *viper.Viper) (*Config, error) {
 
 	config.Queue.Driver = getEnvOrDefault("QUEUE_DRIVER", v.GetString("queue.driver"))
 	config.Queue.Queue = getEnvOrDefault("QUEUE_NAME", v.GetString("queue.queue"))
+	config.Queue.StreamGroup = v.GetString("queue.stream_group")
+	config.Queue.UniqueTTL = v.GetInt("queue.unique_ttl")
 	config.Queue.Connection.Redis = v.GetString("queue.connection.redis")
 	config.Queue.Connection.Database = v.GetString("queue.connection.database")
 	config.Queue.Worker.Sleep = v.GetInt("queue.worker.sleep")

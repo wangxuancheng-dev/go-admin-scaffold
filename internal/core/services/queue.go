@@ -42,6 +42,12 @@ func NewQueueService(cfg *config.Config) (*QueueService, error) {
 		}
 		qc.Options["connection"] = connectionStr
 		qc.Options["queue"] = cfg.Queue.Queue
+		if cfg.Queue.StreamGroup != "" {
+			qc.Options["stream_group"] = cfg.Queue.StreamGroup
+		}
+		if cfg.Queue.UniqueTTL > 0 {
+			qc.Options["unique_ttl"] = time.Duration(cfg.Queue.UniqueTTL) * time.Second
+		}
 
 	case "database", "mysql", "postgres", "postgresql", "pg":
 		return nil, fmt.Errorf("database driver requires external database connection setup")
@@ -86,8 +92,12 @@ func (s *QueueService) Start() error {
 		}
 
 		for i := 0; i < processes; i++ {
-			worker := queue.NewWorker(s.manager, []string{name}, options)
 			workerName := fmt.Sprintf("%s-%d", name, i+1)
+			opts := options
+			if s.cfg.Queue.Driver == "redis" {
+				opts.ConsumerName = workerName
+			}
+			worker := queue.NewWorker(s.manager, []string{name}, opts)
 
 			s.mu.Lock()
 			s.workers[workerName] = worker

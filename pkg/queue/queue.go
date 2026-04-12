@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -24,7 +25,14 @@ var (
 	ErrMaxAttemptsExceeded = errors.New("max attempts exceeded")
 	// ErrInvalidPayload 无效的任务数据
 	ErrInvalidPayload = errors.New("invalid job payload")
+	// ErrDuplicateJob 唯一任务已存在（相同队列 + unique key 尚在等待或执行中）
+	ErrDuplicateJob = errors.New("duplicate job: unique key already queued or processing")
 )
+
+// NormalizeUniqueKey trims whitespace; empty string disables unique-queue deduplication.
+func NormalizeUniqueKey(s string) string {
+	return strings.TrimSpace(s)
+}
 
 // Job represents a queue job
 type Job struct {
@@ -69,6 +77,8 @@ type JobInterface interface {
 	SetID(id string)
 	// SetReservedAt 设置保留时间
 	SetReservedAt(t *time.Time)
+	// GetUniqueKey 非空时在同一队列内去重（Laravel ShouldBeUnique 风格）；空字符串表示不去重
+	GetUniqueKey() string
 }
 
 // QueueInterface 定义队列驱动接口

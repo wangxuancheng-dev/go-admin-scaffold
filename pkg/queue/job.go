@@ -9,6 +9,8 @@ import (
 type BaseJob struct {
 	ID          string          `json:"id"`
 	Queue       string          `json:"queue"`
+	// UniqueKey 非空时，同一队列内相同 key 的任务在尚未完成前只会入队一次（需驱动支持）
+	UniqueKey   string          `json:"unique_key,omitempty"`
 	Payload     json.RawMessage `json:"payload"`
 	Attempts    int             `json:"attempts"`
 	MaxAttempts int             `json:"max_attempts"`
@@ -58,6 +60,9 @@ func NewBaseJob(queue string, payload interface{}, options map[string]interface{
 		}
 		if v, ok := options["backoff"].([]time.Duration); ok {
 			job.Backoff = v
+		}
+		if v, ok := options["unique_key"].(string); ok {
+			job.UniqueKey = v
 		}
 	}
 
@@ -136,4 +141,9 @@ func (j *BaseJob) SetID(id string) {
 func (j *BaseJob) SetReservedAt(t *time.Time) {
 	j.ReservedAt = t
 	j.UpdatedAt = time.Now()
+}
+
+// GetUniqueKey 返回唯一键（去重用）
+func (j *BaseJob) GetUniqueKey() string {
+	return j.UniqueKey
 }

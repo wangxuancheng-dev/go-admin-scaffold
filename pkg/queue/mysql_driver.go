@@ -3,17 +3,20 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MySQLJob represents a job in the MySQL database
 type MySQLJob struct {
 	ID        string         `gorm:"primaryKey;type:varchar(36)"`
-	Queue     string         `gorm:"type:varchar(100);index"`
+	Queue     string         `gorm:"type:varchar(100);uniqueIndex:uq_queue_jobs_uniq,priority:1"`
+	UniqueKey *string        `gorm:"type:varchar(191);uniqueIndex:uq_queue_jobs_uniq,priority:2"`
 	Payload   string         `gorm:"type:text"`
 	Attempts  int            `gorm:"default:0"`
 	MaxRetry  int            `gorm:"default:3"`
@@ -78,6 +81,7 @@ func (q *MySQLQueue) Push(ctx context.Context, job JobInterface) error {
 	mysqlJob := &MySQLJob{
 		ID:        job.GetID(),
 		Queue:     queue,
+		UniqueKey: dedupeKeyPtr(job.GetUniqueKey()),
 		Payload:   string(payload),
 		Attempts:  job.GetAttempts(),
 		MaxRetry:  job.GetMaxAttempts(),
@@ -90,7 +94,13 @@ func (q *MySQLQueue) Push(ctx context.Context, job JobInterface) error {
 		mysqlJob.CreatedAt = time.Now().Add(job.GetDelay())
 	}
 
-	return q.db.WithContext(ctx).Create(mysqlJob).Error
+	if err := q.db.WithContext(ctx).Create(mysqlJob).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return ErrDuplicateJob
+		}
+		return err
+	}
+	return nil
 }
 
 // PushRaw 推送原始数据到队列
@@ -127,7 +137,22 @@ func (q *MySQLQueue) PushRaw(ctx context.Context, queue string, payload []byte, 
 		mysqlJob.CreatedAt = time.Now().Add(delay)
 	}
 
-	return q.db.WithContext(ctx).Create(mysqlJob).Error
+	uk := ""
+	if v, ok := options["unique_key"].(string); ok {
+		uk = v
+	}
+	payload = mergeUniqueKeyIntoPayload(payload, uk)
+
+	mysqlJob.Payload = string(payload)
+	mysqlJob.UniqueKey = dedupeKeyPtr(uk)
+
+	if err := q.db.WithContext(ctx).Create(mysqlJob).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return ErrDuplicateJob
+		}
+		return err
+	}
+	return nil
 }
 
 // Later 延迟推送任务
@@ -149,6 +174,7 @@ func (q *MySQLQueue) Later(ctx context.Context, job JobInterface, delay time.Dur
 	mysqlJob := &MySQLJob{
 		ID:        job.GetID(),
 		Queue:     queue,
+		UniqueKey: dedupeKeyPtr(job.GetUniqueKey()),
 		Payload:   string(payload),
 		Attempts:  job.GetAttempts(),
 		MaxRetry:  job.GetMaxAttempts(),
@@ -157,7 +183,13 @@ func (q *MySQLQueue) Later(ctx context.Context, job JobInterface, delay time.Dur
 		UpdatedAt: time.Now(),
 	}
 
-	return q.db.WithContext(ctx).Create(mysqlJob).Error
+	if err := q.db.WithContext(ctx).Create(mysqlJob).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return ErrDuplicateJob
+		}
+		return err
+	}
+	return nil
 }
 
 // Pop 从队列中取出任务
@@ -173,8 +205,9 @@ func (q *MySQLQueue) Pop(ctx context.Context, queue string) (JobInterface, error
 	var mysqlJob MySQLJob
 
 	err := q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Get the next available job
-		if err := tx.Where("queue = ? AND status = ? AND created_at <= ?", queue, "pending", time.Now()).
+		// Get the next available job (SKIP LOCKED: concurrent workers)
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("queue = ? AND status = ? AND created_at <= ?", queue, "pending", time.Now()).
 			Order("created_at ASC").
 			First(&mysqlJob).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -233,7 +266,12 @@ func (q *MySQLQueue) Delete(ctx context.Context, queue string, job JobInterface)
 		}
 	}
 
-	return q.db.WithContext(ctx).Where("queue = ? AND id = ?", queue, job.GetID()).Delete(&MySQLJob{}).Error
+	return q.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&MySQLJob{}).Where("queue = ? AND id = ?", queue, job.GetID()).Update("unique_key", nil).Error; err != nil {
+			return err
+		}
+		return tx.Where("queue = ? AND id = ?", queue, job.GetID()).Delete(&MySQLJob{}).Error
+	})
 }
 
 // Release 释放任务回队列

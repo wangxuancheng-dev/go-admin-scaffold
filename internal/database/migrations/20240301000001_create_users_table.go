@@ -59,7 +59,7 @@ func (m *CreateUsersTable) Down(tx *gorm.DB) error {
 }
 
 func (m *CreateUsersTable) File() string {
-	return "20240301_create_users_table.go"
+	return "20240301000001_create_users_table.go"
 }
 
 func init() {

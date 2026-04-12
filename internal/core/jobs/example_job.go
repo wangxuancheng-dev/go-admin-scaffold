@@ -153,3 +153,41 @@ func (j *CleanupJob) Handle() error {
 	fmt.Printf("Cleanup completed for %s\n", j.Target)
 	return nil
 }
+
+// ProcessOrderJob 订单异步任务示例：演示「唯一队列」——同一队列下相同 UniqueKey（此处为订单号）
+// 在任务尚未完成（未 Delete）前重复入队会返回 queue.ErrDuplicateJob。
+// 实际 Worker 从 Redis/DB Pop 时通常反序列化为 *queue.BaseJob，若需执行自定义 Handle，
+// 请在业务侧按 payload 类型分发或使用独立 worker 解析为本结构体。
+type ProcessOrderJob struct {
+	queue.BaseJob
+	OrderID string `json:"order_id"`
+	Action  string `json:"action"`
+}
+
+// NewProcessOrderJob 创建订单任务；unique key 使用订单号，避免同一订单被多次重复入队。
+func NewProcessOrderJob(orderID, action string) *ProcessOrderJob {
+	uniqueKey := "order:" + orderID
+	return &ProcessOrderJob{
+		BaseJob: queue.BaseJob{
+			Queue:       "default",
+			UniqueKey:   uniqueKey,
+			Attempts:    0,
+			MaxAttempts: 3,
+			Delay:       0,
+			Timeout:     60 * time.Second,
+			RetryAfter:  60 * time.Second,
+			Backoff:     []time.Duration{60 * time.Second, 300 * time.Second, 900 * time.Second},
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		},
+		OrderID: orderID,
+		Action:  action,
+	}
+}
+
+// Handle 处理任务
+func (j *ProcessOrderJob) Handle() error {
+	fmt.Printf("Processing order %s action=%s (unique_key=%s)\n", j.OrderID, j.Action, j.GetUniqueKey())
+	time.Sleep(500 * time.Millisecond)
+	return nil
+}

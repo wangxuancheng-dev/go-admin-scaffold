@@ -45,5 +45,5 @@ func init() {
 		return tx.Migrator().DropTable("seeder_histories")
 	}
 
-	Register("create_seeder_histories_table", NewMigration("20240310_create_seeder_histories_table.go", up, down))
+	Register("create_seeder_histories_table", NewMigration("20240310000002_create_seeder_histories_table.go", up, down))
 }

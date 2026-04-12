@@ -1,30 +1,41 @@
 package seeders
 
 import (
+	"fmt"
+
 	"app/internal/database/seeder"
 )
 
 var globalManager *seeder.SeederManager
-var pendingRegistrations = make(map[string]*seeder.Seeder)
 
-// Register registers a seeder with the global manager or stores it temporarily
+type pendingEntry struct {
+	name string
+	s    *seeder.Seeder
+}
+
+var pendingRegistrations []pendingEntry
+
+// Register registers a seeder with the global manager or stores it temporarily (FIFO init order).
 func Register(name string, s *seeder.Seeder) {
 	if globalManager != nil {
 		globalManager.Register(name, s)
-	} else {
-		pendingRegistrations[name] = s
+		return
 	}
+	for _, p := range pendingRegistrations {
+		if p.name == name {
+			panic(fmt.Sprintf("seeder %s already registered", name))
+		}
+	}
+	pendingRegistrations = append(pendingRegistrations, pendingEntry{name: name, s: s})
 }
 
 // SetGlobalManager sets the global seeder manager and registers all pending seeders
 func SetGlobalManager(manager *seeder.SeederManager) {
 	globalManager = manager
 
-	// Register all pending seeders
-	for name, s := range pendingRegistrations {
-		manager.Register(name, s)
+	for _, p := range pendingRegistrations {
+		manager.Register(p.name, p.s)
 	}
 
-	// Clear pending registrations
-	pendingRegistrations = make(map[string]*seeder.Seeder)
+	pendingRegistrations = nil
 }

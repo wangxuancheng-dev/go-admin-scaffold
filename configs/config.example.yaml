@@ -61,6 +61,10 @@ queue:
   driver: "redis"
   # 默认队列名称
   queue: "default"
+  # Redis Streams 消费组名（可选，默认 queue_workers）
+  # stream_group: "queue_workers"
+  # Redis 唯一任务（unique_key）锁过期时间，秒；0 或未设置则使用驱动默认（约 24h 或与 timeout 相关）
+  # unique_ttl: 86400
   # 连接配置（占位符需与模板/工具一致；主服务 Redis 队列实际由 cfg 拼装连接串）
   connection:
     redis: "redis://{{.redis.host}}:{{.redis.port}}/{{.redis.db}}"

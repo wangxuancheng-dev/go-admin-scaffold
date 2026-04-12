@@ -138,8 +138,8 @@ go run cmd/tools/main.go seed reset
 
 ### 迁移文件命名
 
-- 使用时间戳前缀：`20240310_create_users_table.go`
-- 使用描述性名称：`create_users_table`, `add_role_id_to_users`
+- 文件名：`YYYYMMDDHHmmss_描述.go`（年月日时分秒共 14 位，按字典序即执行顺序），例如 `20240301000001_create_users_table.go`
+- `Register` 的第一个参数为逻辑名（写入 `migration_records`），例如 `create_users_table`；`NewMigration` / `File()` 里传入与文件同名的 `.go` 字符串
 - 一个迁移文件只做一件事
 
 ### 迁移设计
