@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"strconv"
 
 	"go-admin-scaffold/internal/core/models"
@@ -21,13 +22,24 @@ func NewRoleHandler(roles *services.RoleService, menus *services.MenuService) *R
 	return &RoleHandler{roles: roles, menus: menus}
 }
 
+func mapRoleError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		response.NotFoundError(c)
+	case errors.Is(err, services.ErrAdminRoleProtected):
+		response.Forbidden(c, err.Error())
+	default:
+		response.ServerError(c)
+	}
+}
+
 func (h *RoleHandler) ListRoles(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	pagination := &models.Pagination{Page: page, PageSize: pageSize}
 	roles, err := h.roles.List(c.Request.Context(), pagination)
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to fetch roles")
+		response.ServerError(c)
 		return
 	}
 	response.PageSuccess(c, roles, pagination.Total, pagination.Page, pagination.PageSize)
@@ -41,7 +53,7 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 	}
 	role, err := h.roles.Create(c.Request.Context(), &req)
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to create role")
+		response.ServerError(c)
 		return
 	}
 	response.Success(c, role)
@@ -55,11 +67,7 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 	}
 	role, err := h.roles.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			response.NotFoundError(c)
-			return
-		}
-		response.Error(c, response.CodeServerError, "failed to fetch role")
+		mapRoleError(c, err)
 		return
 	}
 	response.Success(c, role)
@@ -78,7 +86,7 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 	}
 	role, err := h.roles.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to update role")
+		mapRoleError(c, err)
 		return
 	}
 	response.Success(c, role)
@@ -91,7 +99,7 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 		return
 	}
 	if err := h.roles.Delete(c.Request.Context(), uint(id)); err != nil {
-		response.Error(c, response.CodeServerError, "failed to delete role")
+		mapRoleError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -123,12 +131,12 @@ func (h *RoleHandler) GetRoleMenus(c *gin.Context) {
 	}
 	allMenus, err := h.menus.GetAll(c.Request.Context())
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to get menus")
+		response.ServerError(c)
 		return
 	}
 	roleMenus, err := h.roles.GetMenus(c.Request.Context(), uint(id))
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to get role menus")
+		response.ServerError(c)
 		return
 	}
 	assignedMap := make(map[uint]bool)
@@ -150,11 +158,7 @@ func (h *RoleHandler) UpdateRoleMenus(c *gin.Context) {
 		return
 	}
 	if err := h.roles.UpdateMenus(c.Request.Context(), uint(id), &req); err != nil {
-		if err == gorm.ErrRecordNotFound {
-			response.NotFoundError(c)
-			return
-		}
-		response.Error(c, response.CodeServerError, "failed to update role menus: "+err.Error())
+		mapRoleError(c, err)
 		return
 	}
 	response.Success(c, nil)

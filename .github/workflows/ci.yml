@@ -21,8 +21,14 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test (all packages)
-        run: go test ./...
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+
+      - name: Staticcheck
+        run: staticcheck ./...
+
+      - name: Test (all packages, race)
+        run: go test -race ./...
 
       - name: Coverage on gated packages
         run: >
@@ -31,6 +37,7 @@ jobs:
           ./internal/core/metrics
           ./internal/core/middleware
           ./internal/core/storage
+          ./internal/core/handlers
           ./internal/api/open/v1
           ./internal/api/admin/handlers
           ./pkg/utils
@@ -51,6 +58,7 @@ jobs:
           test -f docs/features/realtime.md
           test -f docs/tracing.md
           ! grep -R --include='*.md' -n '"app/' docs || (echo 'docs still contain old module import \"app/\"' && exit 1)
+          ! grep -R --include='*.md' -n '/api/v1/auth' docs || (echo 'docs still contain stale /api/v1/auth paths' && exit 1)
 
       - name: Install swag
         run: go install github.com/swaggo/swag/cmd/swag@latest

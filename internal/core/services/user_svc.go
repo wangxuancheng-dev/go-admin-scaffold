@@ -8,6 +8,7 @@ import (
 
 	"go-admin-scaffold/internal/config"
 	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/repositories"
 	"go-admin-scaffold/internal/core/types"
 	"go-admin-scaffold/pkg/logger"
 
@@ -143,39 +144,7 @@ func (s *UserService) Create(ctx context.Context, req *CreateUserRequest) (*mode
 		Status:   req.Status,
 	}
 
-	// Use transaction to ensure both user creation and role assignment succeed
-	err = s.userRepo.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Create user
-		if err := tx.Create(user).Error; err != nil {
-			return err
-		}
-
-		// If no roles specified, assign default user role
-		if len(req.RoleIDs) == 0 {
-			var userRole models.Role
-			if err := tx.Where("code = ?", "user").First(&userRole).Error; err != nil {
-				return err
-			}
-			req.RoleIDs = []uint{userRole.ID}
-		}
-
-		// Create user-role associations
-		userRoles := make([]models.UserRole, 0, len(req.RoleIDs))
-		for _, roleID := range req.RoleIDs {
-			userRoles = append(userRoles, models.UserRole{
-				UserID: user.ID,
-				RoleID: roleID,
-			})
-		}
-		if err := tx.Create(&userRoles).Error; err != nil {
-			return err
-		}
-
-		// Load roles for the user
-		return tx.Preload("Roles").First(user, user.ID).Error
-	})
-
-	if err != nil {
+	if err := s.userRepo.CreateWithRoles(ctx, user, req.RoleIDs); err != nil {
 		return nil, err
 	}
 
@@ -200,9 +169,8 @@ func (s *UserService) Create(ctx context.Context, req *CreateUserRequest) (*mode
 
 // Update updates a user
 func (s *UserService) Update(ctx context.Context, id uint, req *UpdateUserRequest) (*models.User, error) {
-	// First get user without roles to check basic info
-	var user models.User
-	if err := s.userRepo.GetDB().WithContext(ctx).Select("id", "username", "email", "nickname", "avatar", "status").Where("id = ?", id).First(&user).Error; err != nil {
+	user, err := s.userRepo.FindBasicByID(ctx, id)
+	if err != nil {
 		return nil, ErrUserNotFound
 	}
 
@@ -223,10 +191,8 @@ func (s *UserService) Update(ctx context.Context, id uint, req *UpdateUserReques
 			updateData["email"] = req.Email
 		}
 
-		if len(updateData) > 0 {
-			if err := s.userRepo.GetDB().WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Updates(updateData).Error; err != nil {
-				return nil, err
-			}
+		if err := s.userRepo.UpdateFields(ctx, id, updateData); err != nil {
+			return nil, err
 		}
 	} else {
 		// Normal user update logic
@@ -251,10 +217,8 @@ func (s *UserService) Update(ctx context.Context, id uint, req *UpdateUserReques
 			updateData["status"] = req.Status
 		}
 
-		if len(updateData) > 0 {
-			if err := s.userRepo.GetDB().WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Updates(updateData).Error; err != nil {
-				return nil, err
-			}
+		if err := s.userRepo.UpdateFields(ctx, id, updateData); err != nil {
+			return nil, err
 		}
 	}
 
@@ -389,9 +353,8 @@ func (s *UserService) UpdateStatus(ctx context.Context, id uint, status int) err
 		return ErrSuperAdminModify
 	}
 
-	// First check if user exists without loading roles
-	var user models.User
-	if err := s.userRepo.GetDB().WithContext(ctx).Select("id", "username", "status").Where("id = ?", id).First(&user).Error; err != nil {
+	user, err := s.userRepo.FindBasicByID(ctx, id)
+	if err != nil {
 		return ErrUserNotFound
 	}
 
@@ -399,8 +362,7 @@ func (s *UserService) UpdateStatus(ctx context.Context, id uint, status int) err
 		return ErrInvalidUserStatus
 	}
 
-	// Update only the status field to avoid affecting role associations
-	if err := s.userRepo.GetDB().WithContext(ctx).Model(&models.User{}).Where("id = ?", id).Update("status", status).Error; err != nil {
+	if err := s.userRepo.UpdateStatus(ctx, id, status); err != nil {
 		return err
 	}
 
@@ -439,27 +401,13 @@ func (s *UserService) GetUserOperationHistory(ctx context.Context, id uint, limi
 
 // ExportUserList exports user list data based on filter criteria
 func (s *UserService) ExportUserList(ctx context.Context, req *ExportUserListRequest) ([]models.User, error) {
-	db := s.userRepo.GetDB().WithContext(ctx)
-
-	// Apply filters
-	if req.Username != "" {
-		db = db.Where("username LIKE ?", "%"+req.Username+"%")
-	}
-	if req.Email != "" {
-		db = db.Where("email LIKE ?", "%"+req.Email+"%")
-	}
-	if req.Status != nil {
-		db = db.Where("status = ?", *req.Status)
-	}
-	if !req.StartTime.IsZero() {
-		db = db.Where("created_at >= ?", req.StartTime)
-	}
-	if !req.EndTime.IsZero() {
-		db = db.Where("created_at <= ?", req.EndTime)
-	}
-
-	var users []models.User
-	err := db.Preload("Roles").Find(&users).Error
+	users, err := s.userRepo.ExportWithFilters(ctx, &types.UserExportFilters{
+		Username:  req.Username,
+		Email:     req.Email,
+		Status:    req.Status,
+		StartTime: req.StartTime,
+		EndTime:   req.EndTime,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -485,62 +433,35 @@ func (s *UserService) UpdateUserRoles(ctx context.Context, userID uint, roleIDs 
 		return ErrSuperAdminModify
 	}
 
-	err := s.userRepo.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Check if user exists
-		user, err := s.userRepo.FindByID(ctx, userID)
-		if err != nil {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return ErrUserNotFound
+	}
+
+	if err := s.userRepo.ReplaceUserRoles(ctx, userID, roleIDs); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrUserNotFound
 		}
-
-		// Check if any of the roles is admin role
-		var adminRoleCount int64
-		if err := tx.Model(&models.Role{}).Where("id IN ? AND code = ?", roleIDs, "admin").Count(&adminRoleCount).Error; err != nil {
+		if errors.Is(err, repositories.ErrCannotAssignAdminRole) {
 			return err
 		}
-
-		// Prevent assigning admin role through this endpoint
-		if adminRoleCount > 0 {
-			return errors.New("cannot assign admin role through this endpoint")
-		}
-
-		// Remove existing role assignments
-		if err := tx.Where("user_id = ?", userID).Delete(&models.UserRole{}).Error; err != nil {
-			return err
-		}
-
-		// Add new role assignments
-		if len(roleIDs) > 0 {
-			userRoles := make([]models.UserRole, 0, len(roleIDs))
-			for _, roleID := range roleIDs {
-				userRoles = append(userRoles, models.UserRole{
-					UserID: userID,
-					RoleID: roleID,
-				})
-			}
-			if err := tx.Create(&userRoles).Error; err != nil {
-				return err
-			}
-		}
-
-		// Record operation log
-		if s.logSvc != nil {
-			s.logSvc.RecordOperationLog(ctx, &models.OperationLog{
-				UserID:       user.ID,
-				Username:     user.Username,
-				Action:       "update_user_roles",
-				Module:       "user",
-				BusinessID:   strconv.FormatUint(uint64(user.ID), 10),
-				BusinessType: "user",
-				Status:       1,
-				ErrorMessage: "",
-			})
-		}
-
-		return nil
-	})
-	if err != nil {
 		return err
 	}
+
+	// Record operation log
+	if s.logSvc != nil {
+		s.logSvc.RecordOperationLog(ctx, &models.OperationLog{
+			UserID:       user.ID,
+			Username:     user.Username,
+			Action:       "update_user_roles",
+			Module:       "user",
+			BusinessID:   strconv.FormatUint(uint64(user.ID), 10),
+			BusinessType: "user",
+			Status:       1,
+			ErrorMessage: "",
+		})
+	}
+
 	s.invalidateUserPermissions(ctx, userID)
 	return nil
 }

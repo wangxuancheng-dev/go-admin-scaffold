@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 	"sort"
 
 	"go-admin-scaffold/internal/core/models"
@@ -232,52 +231,29 @@ func (s *MenuService) GetAll(ctx context.Context) ([]models.Menu, error) {
 
 // GetUserMenus gets menus accessible by a user
 func (s *MenuService) GetUserMenus(ctx context.Context, userID uint) ([]MenuRouteItem, error) {
-	log.Printf("[DEBUG] ========== GetUserMenus called for userID: %d ==========", userID)
-
-	// Get user with roles
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		log.Printf("[ERROR] Failed to find user by ID %d: %v", userID, err)
 		return nil, err
 	}
-	log.Printf("[DEBUG] Found user: %d, roles count: %d, IsSuperAdmin: %v", user.ID, len(user.Roles), user.IsSuperAdmin)
 
 	// Check if user is super admin - use the IsSuperAdmin field from user model
 	if user.IsSuperAdmin {
-		log.Printf("[DEBUG] ========== User %d is super admin, getting ALL visible menus ==========", userID)
-
 		// Get all menus first, then filter visible and enabled ones
 		allMenus, err := s.menuRepo.FindAll(ctx)
 		if err != nil {
-			log.Printf("[ERROR] Failed to find all menus: %v", err)
 			return nil, err
 		}
-		log.Printf("[DEBUG] Found %d total menus", len(allMenus))
 
 		// Filter for visible and enabled menus
 		var menus []models.Menu
 		for _, menu := range allMenus {
-			log.Printf("[DEBUG] Checking menu ID=%d, Name=%s, Title=%s, ParentID=%v, Visible=%d, Status=%d",
-				menu.ID, menu.Name, menu.Title, menu.ParentID, menu.Visible, menu.Status)
 			if menu.Visible == 1 && menu.Status == 1 {
 				menus = append(menus, menu)
-				log.Printf("[DEBUG] ✅ Added menu ID=%d (%s) to visible list", menu.ID, menu.Title)
-			} else {
-				log.Printf("[DEBUG] ❌ Skipped menu ID=%d (%s) - Visible=%d, Status=%d",
-					menu.ID, menu.Title, menu.Visible, menu.Status)
 			}
-		}
-		log.Printf("[DEBUG] Filtered to %d visible and enabled menus for super admin", len(menus))
-
-		// Log all filtered menus
-		for i, menu := range menus {
-			log.Printf("[DEBUG] Visible menu %d: ID=%d, Name=%s, Title=%s, ParentID=%v",
-				i+1, menu.ID, menu.Name, menu.Title, menu.ParentID)
 		}
 
 		// If no visible menus found, create a default dashboard menu
 		if len(menus) == 0 {
-			log.Printf("[WARN] No visible menus found, creating default menu")
 			defaultMenus := []MenuRouteItem{
 				{
 					ID:        1,
@@ -297,21 +273,9 @@ func (s *MenuService) GetUserMenus(ctx context.Context, userID uint) ([]MenuRout
 			return defaultMenus, nil
 		}
 
-		result := s.buildMenuRoutes(menus)
-		log.Printf("[DEBUG] Built %d menu routes for super admin", len(result))
-		for i, route := range result {
-			log.Printf("[DEBUG] Root route %d: ID=%d, Name=%s, Title=%s, Children=%d",
-				i+1, route.ID, route.Name, route.Meta.Title, len(route.Children))
-			for j, child := range route.Children {
-				log.Printf("[DEBUG]   Child route %d.%d: ID=%d, Name=%s, Title=%s",
-					i+1, j+1, child.ID, child.Name, child.Meta.Title)
-			}
-		}
-		log.Printf("[DEBUG] ========== Returning %d routes for super admin ==========", len(result))
-		return result, nil
+		return s.buildMenuRoutes(menus), nil
 	}
 
-	log.Printf("[DEBUG] ========== User %d is NOT super admin, using role-based access ==========", userID)
 	// Extract role IDs for non-super-admin users
 	roleIDs := make([]uint, 0)
 	for _, role := range user.Roles {
@@ -319,21 +283,17 @@ func (s *MenuService) GetUserMenus(ctx context.Context, userID uint) ([]MenuRout
 			roleIDs = append(roleIDs, role.ID)
 		}
 	}
-	log.Printf("[DEBUG] Active role IDs for user %d: %v", userID, roleIDs)
 
 	// If user has no active roles, return empty menu list
 	if len(roleIDs) == 0 {
-		log.Printf("[WARN] User %d has no active roles", userID)
 		return []MenuRouteItem{}, nil
 	}
 
 	// Get menus by role IDs
 	menus, err := s.menuRepo.FindByRoleIDs(ctx, roleIDs)
 	if err != nil {
-		log.Printf("[ERROR] Failed to find menus by role IDs %v: %v", roleIDs, err)
 		return nil, err
 	}
-	log.Printf("[DEBUG] Found %d menus for roles %v", len(menus), roleIDs)
 
 	// Filter visible and enabled menus
 	var visibleMenus []models.Menu
@@ -342,13 +302,8 @@ func (s *MenuService) GetUserMenus(ctx context.Context, userID uint) ([]MenuRout
 			visibleMenus = append(visibleMenus, menu)
 		}
 	}
-	log.Printf("[DEBUG] Filtered to %d visible and enabled menus", len(visibleMenus))
 
-	// Build menu tree
-	result := s.buildMenuRoutes(visibleMenus)
-	log.Printf("[DEBUG] Built menu tree with %d root items", len(result))
-
-	return result, nil
+	return s.buildMenuRoutes(visibleMenus), nil
 }
 
 // GetVisibleMenuTree gets the visible menu tree for public access
@@ -371,24 +326,16 @@ func (s *MenuService) GetVisibleMenuTree(ctx context.Context) ([]MenuRouteItem, 
 
 // buildMenuRoutes builds menu route items from menu models
 func (s *MenuService) buildMenuRoutes(menus []models.Menu) []MenuRouteItem {
-	log.Printf("[DEBUG] ========== buildMenuRoutes called with %d menus ==========", len(menus))
-
 	menuMap := make(map[uint]*MenuRouteItem)
 	var rootMenus []*MenuRouteItem
 
 	// First pass: create menu items
-	log.Printf("[DEBUG] First pass: creating menu items...")
 	for _, menu := range menus {
-		log.Printf("[DEBUG] Processing menu ID=%d, Name=%s, Title=%s, ParentID=%v",
-			menu.ID, menu.Name, menu.Title, menu.ParentID)
-
 		// Parse meta JSON string to extract metadata
 		var metaData MenuMeta
 		if menu.Meta != "" {
-			// Try to parse the JSON meta string
 			if err := json.Unmarshal([]byte(menu.Meta), &metaData); err != nil {
-				log.Printf("[WARN] Failed to parse meta JSON for menu %s: %v", menu.Name, err)
-				// Use default meta values
+				// Use default meta values on parse failure
 				metaData = MenuMeta{
 					Title:     menu.Title,
 					Icon:      menu.Icon,
@@ -416,32 +363,18 @@ func (s *MenuService) buildMenuRoutes(menus []models.Menu) []MenuRouteItem {
 			Sort:      menu.Sort,
 		}
 		menuMap[menu.ID] = item
-		log.Printf("[DEBUG] ✅ Created menu item ID=%d (%s) in map", menu.ID, menu.Title)
 	}
 
 	// Second pass: build tree structure
-	log.Printf("[DEBUG] Second pass: building tree structure...")
-	log.Printf("[DEBUG] MenuMap contains %d items", len(menuMap))
-
 	for _, menu := range menus {
 		item := menuMap[menu.ID]
-		log.Printf("[DEBUG] Processing menu ID=%d (%s) for tree building...", menu.ID, menu.Title)
 
 		if menu.ParentID == nil {
-			// Root menu
 			rootMenus = append(rootMenus, item)
-			log.Printf("[DEBUG] ✅ Added ID=%d (%s) as ROOT menu", menu.ID, menu.Title)
 		} else {
-			// Child menu
 			parentID := *menu.ParentID
-			log.Printf("[DEBUG] Looking for parent ID=%d for child ID=%d (%s)", parentID, menu.ID, menu.Title)
-
 			if parent, exists := menuMap[parentID]; exists {
 				parent.Children = append(parent.Children, *item)
-				log.Printf("[DEBUG] ✅ Added ID=%d (%s) as CHILD of ID=%d", menu.ID, menu.Title, parentID)
-			} else {
-				log.Printf("[DEBUG] ⚠️  Parent ID=%d not found for child ID=%d (%s), skipping",
-					parentID, menu.ID, menu.Title)
 			}
 		}
 	}
@@ -451,31 +384,18 @@ func (s *MenuService) buildMenuRoutes(menus []models.Menu) []MenuRouteItem {
 		sort.Slice(root.Children, func(i, j int) bool {
 			return root.Children[i].Sort < root.Children[j].Sort
 		})
-		log.Printf("[DEBUG] Sorted %d children for root menu ID=%d (%s)", len(root.Children), root.ID, root.Meta.Title)
 	}
 
 	// Sort root menus by sort field
 	sort.Slice(rootMenus, func(i, j int) bool {
 		return rootMenus[i].Sort < rootMenus[j].Sort
 	})
-	log.Printf("[DEBUG] Sorted %d root menus", len(rootMenus))
 
 	// Convert pointer slice to value slice for return
 	result := make([]MenuRouteItem, len(rootMenus))
 	for i, root := range rootMenus {
 		result[i] = *root
 	}
-
-	log.Printf("[DEBUG] ========== Final tree structure: %d root menus ==========", len(result))
-	for i, root := range result {
-		log.Printf("[DEBUG] Root menu %d: ID=%d, Title=%s, Sort=%d, Children=%d",
-			i+1, root.ID, root.Meta.Title, root.Sort, len(root.Children))
-		for j, child := range root.Children {
-			log.Printf("[DEBUG]   Child %d.%d: ID=%d, Title=%s, Sort=%d",
-				i+1, j+1, child.ID, child.Meta.Title, child.Sort)
-		}
-	}
-	log.Printf("[DEBUG] ========== buildMenuRoutes completed ==========")
 
 	return result
 }
@@ -498,7 +418,6 @@ func (s *MenuService) UpdateMenuRoles(ctx context.Context, menuID uint, roleIDs 
 func (s *MenuService) metaToString(meta models.MenuMeta) string {
 	jsonData, err := json.Marshal(meta)
 	if err != nil {
-		log.Printf("[WARN] Failed to marshal meta to JSON: %v", err)
 		return ""
 	}
 	return string(jsonData)

@@ -1,51 +1,51 @@
 package handlers
 
 import (
-	"go-admin-scaffold/internal/core/storage"
-	"go-admin-scaffold/pkg/response"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"go-admin-scaffold/internal/core/storage"
+	"go-admin-scaffold/pkg/response"
+
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
-// UploadHandler 处理文件上传
+// UploadHandler handles file uploads against a Storage backend.
 type UploadHandler struct {
 	storage storage.Storage
 }
 
-// NewUploadHandler 创建上传处理器
-func NewUploadHandler(storage storage.Storage) *UploadHandler {
-	return &UploadHandler{
-		storage: storage,
-	}
+// NewUploadHandler creates an upload handler.
+func NewUploadHandler(store storage.Storage) *UploadHandler {
+	return &UploadHandler{storage: store}
 }
 
-// UploadRequest 上传请求
+// UploadRequest is the form payload for uploads.
 type UploadRequest struct {
-	Type string `form:"type" binding:"required,oneof=avatar image file"` // 文件类型：avatar-头像，image-图片，file-其他文件
+	Type string `form:"type" binding:"required,oneof=avatar image file"`
 }
 
-// UploadResponse 上传响应
+// UploadResponse is returned after a successful upload.
 type UploadResponse struct {
-	URL  string `json:"url"`  // 文件访问URL
-	Path string `json:"path"` // 文件存储路径
-	Name string `json:"name"` // 文件名
-	Size int64  `json:"size"` // 文件大小
-	Type string `json:"type"` // 文件类型
+	URL  string `json:"url"`
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Type string `json:"type"`
 }
 
-// MultiUploadResponse 多文件上传响应
+// MultiUploadResponse aggregates multi-file upload results.
 type MultiUploadResponse struct {
-	Total   int              `json:"total"`   // 总文件数
-	Success int              `json:"success"` // 成功上传数
-	Failed  int              `json:"failed"`  // 失败数
-	Files   []UploadResponse `json:"files"`   // 文件列表
+	Total   int              `json:"total"`
+	Success int              `json:"success"`
+	Failed  int              `json:"failed"`
+	Files   []UploadResponse `json:"files"`
 }
 
-// Upload 处理单文件上传
+// Upload handles a single file upload.
 func (h *UploadHandler) Upload(c *gin.Context) {
 	var req UploadRequest
 	if err := c.ShouldBind(&req); err != nil {
@@ -53,30 +53,23 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 获取上传的文件
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.ParamError(c, "file is required")
 		return
 	}
 
-	// 验证文件类型
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if !isAllowedFileType(req.Type, ext) {
 		response.ParamError(c, fmt.Sprintf("invalid file type. allowed types: %s", getAllowedExtensions(req.Type)))
 		return
 	}
-
-	// 验证文件大小
 	if !isAllowedFileSize(req.Type, file.Size) {
 		response.ParamError(c, fmt.Sprintf("file too large. maximum size: %dMB", getMaxFileSize(req.Type)/1024/1024))
 		return
 	}
 
-	// 构建存储路径
-	path := buildStoragePath(req.Type, file.Filename)
-
-	// 上传文件
+	path := buildStoragePath(req.Type, ext)
 	src, err := file.Open()
 	if err != nil {
 		response.ServerError(c)
@@ -93,13 +86,13 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	response.Success(c, UploadResponse{
 		URL:  url,
 		Path: path,
-		Name: file.Filename,
+		Name: filepath.Base(path),
 		Size: file.Size,
 		Type: req.Type,
 	})
 }
 
-// MultiUpload 处理多文件上传
+// MultiUpload handles multiple file uploads.
 func (h *UploadHandler) MultiUpload(c *gin.Context) {
 	var req UploadRequest
 	if err := c.ShouldBind(&req); err != nil {
@@ -107,7 +100,6 @@ func (h *UploadHandler) MultiUpload(c *gin.Context) {
 		return
 	}
 
-	// 获取上传的文件
 	form, err := c.MultipartForm()
 	if err != nil {
 		response.ParamError(c, "failed to get form data")
@@ -120,39 +112,25 @@ func (h *UploadHandler) MultiUpload(c *gin.Context) {
 		return
 	}
 
-	// 验证文件数量
-	maxFiles := 10 // 最大文件数
+	const maxFiles = 10
 	if len(files) > maxFiles {
 		response.ParamError(c, fmt.Sprintf("too many files. maximum allowed: %d", maxFiles))
 		return
 	}
 
 	result := MultiUploadResponse{
-		Total:   len(files),
-		Success: 0,
-		Failed:  0,
-		Files:   make([]UploadResponse, 0, len(files)),
+		Total: len(files),
+		Files: make([]UploadResponse, 0, len(files)),
 	}
 
-	// 处理每个文件
 	for _, file := range files {
-		// 验证文件类型
 		ext := strings.ToLower(filepath.Ext(file.Filename))
-		if !isAllowedFileType(req.Type, ext) {
+		if !isAllowedFileType(req.Type, ext) || !isAllowedFileSize(req.Type, file.Size) {
 			result.Failed++
 			continue
 		}
 
-		// 验证文件大小
-		if !isAllowedFileSize(req.Type, file.Size) {
-			result.Failed++
-			continue
-		}
-
-		// 构建存储路径
-		path := buildStoragePath(req.Type, file.Filename)
-
-		// 上传文件
+		path := buildStoragePath(req.Type, ext)
 		src, err := file.Open()
 		if err != nil {
 			result.Failed++
@@ -170,7 +148,7 @@ func (h *UploadHandler) MultiUpload(c *gin.Context) {
 		result.Files = append(result.Files, UploadResponse{
 			URL:  url,
 			Path: path,
-			Name: file.Filename,
+			Name: filepath.Base(path),
 			Size: file.Size,
 			Type: req.Type,
 		})
@@ -179,64 +157,75 @@ func (h *UploadHandler) MultiUpload(c *gin.Context) {
 	response.Success(c, result)
 }
 
-// 检查文件类型是否允许
 func isAllowedFileType(fileType, ext string) bool {
 	switch fileType {
-	case "avatar":
-		return isImageExt(ext)
-	case "image":
+	case "avatar", "image":
 		return isImageExt(ext)
 	case "file":
+		return isDocumentExt(ext)
+	default:
+		return false
+	}
+}
+
+func isImageExt(ext string) bool {
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
 		return true
 	default:
 		return false
 	}
 }
 
-// 检查是否是图片扩展名
-func isImageExt(ext string) bool {
-	allowedExts := []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
-	for _, allowed := range allowedExts {
-		if ext == allowed {
-			return true
-		}
+func isDocumentExt(ext string) bool {
+	switch ext {
+	case ".pdf", ".txt", ".csv", ".doc", ".docx", ".xls", ".xlsx", ".zip":
+		return true
+	default:
+		return false
 	}
-	return false
 }
 
-// 获取允许的文件扩展名
 func getAllowedExtensions(fileType string) string {
 	switch fileType {
 	case "avatar", "image":
 		return ".jpg, .jpeg, .png, .gif, .webp"
 	case "file":
-		return "all"
+		return ".pdf, .txt, .csv, .doc, .docx, .xls, .xlsx, .zip"
 	default:
 		return ""
 	}
 }
 
-// 检查文件大小是否允许
 func isAllowedFileSize(fileType string, size int64) bool {
-	return size <= getMaxFileSize(fileType)
+	return size > 0 && size <= getMaxFileSize(fileType)
 }
 
-// 获取最大文件大小
 func getMaxFileSize(fileType string) int64 {
 	switch fileType {
 	case "avatar":
-		return 2 * 1024 * 1024 // 2MB
+		return 2 * 1024 * 1024
 	case "image":
-		return 5 * 1024 * 1024 // 5MB
+		return 5 * 1024 * 1024
 	case "file":
-		return 10 * 1024 * 1024 // 10MB
+		return 10 * 1024 * 1024
 	default:
 		return 0
 	}
 }
 
-// 构建存储路径
-func buildStoragePath(fileType, filename string) string {
+// buildStoragePath uses a random UUID filename so client-supplied names never enter the path.
+func buildStoragePath(fileType, ext string) string {
 	now := time.Now()
-	return fmt.Sprintf("%s/%d/%02d/%02d/%s", fileType, now.Year(), now.Month(), now.Day(), filename)
+	safeExt := sanitizeExt(ext)
+	name := uuid.NewString() + safeExt
+	return fmt.Sprintf("%s/%d/%02d/%02d/%s", fileType, now.Year(), int(now.Month()), now.Day(), name)
+}
+
+func sanitizeExt(ext string) string {
+	ext = strings.ToLower(strings.TrimSpace(ext))
+	if ext == "" || !strings.HasPrefix(ext, ".") || strings.ContainsAny(ext, "/\\") {
+		return ""
+	}
+	return ext
 }

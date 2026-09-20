@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"errors"
 	"strconv"
 
 	"go-admin-scaffold/internal/core/models"
@@ -19,6 +20,21 @@ type UserHandler struct {
 
 func NewUserHandler(users services.UserServiceAPI, logs *services.LogService) *UserHandler {
 	return &UserHandler{users: users, logs: logs}
+}
+
+func mapUserError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, services.ErrUserNotFound):
+		response.NotFoundError(c)
+	case errors.Is(err, services.ErrUsernameTaken):
+		response.BusinessError(c, err.Error())
+	case errors.Is(err, services.ErrEmailTaken):
+		response.Error(c, response.CodeEmailTaken, err.Error())
+	case errors.Is(err, services.ErrSuperAdminModify), errors.Is(err, services.ErrSuperAdminDelete):
+		response.Forbidden(c, err.Error())
+	default:
+		response.ServerError(c)
+	}
 }
 
 // ListUsers handles the request to list users with pagination and search
@@ -90,7 +106,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 	user, err := h.users.Create(c.Request.Context(), &req)
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to create user")
+		mapUserError(c, err)
 		return
 	}
 	response.Success(c, user)
@@ -107,7 +123,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	}
 	user, err := h.users.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
-		response.NotFoundError(c)
+		mapUserError(c, err)
 		return
 	}
 	response.Success(c, user)
@@ -127,7 +143,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 	user, err := h.users.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to update user")
+		mapUserError(c, err)
 		return
 	}
 	response.Success(c, user)
@@ -141,7 +157,7 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 	if err := h.users.Delete(c.Request.Context(), uint(id)); err != nil {
-		response.Error(c, response.CodeServerError, "failed to delete user")
+		mapUserError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -156,7 +172,7 @@ func (h *UserHandler) ExportUsers(c *gin.Context) {
 	}
 	users, err := h.users.ExportUserList(c.Request.Context(), &req)
 	if err != nil {
-		response.Error(c, response.CodeServerError, "failed to export users")
+		response.ServerError(c)
 		return
 	}
 	response.Success(c, users)
@@ -177,7 +193,7 @@ func (h *UserHandler) UpdateUserRoles(c *gin.Context) {
 		return
 	}
 	if err := h.users.UpdateUserRoles(c.Request.Context(), uint(userID), req.RoleIDs); err != nil {
-		response.BusinessError(c, err.Error())
+		mapUserError(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "User roles updated successfully"})
@@ -198,11 +214,7 @@ func (h *UserHandler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 	if err := h.users.UpdateStatus(c.Request.Context(), uint(id), *req.Status); err != nil {
-		if err == services.ErrSuperAdminModify {
-			response.BusinessError(c, "超级管理员账户状态不能修改")
-			return
-		}
-		response.Error(c, response.CodeServerError, "failed to update user status")
+		mapUserError(c, err)
 		return
 	}
 	response.Success(c, gin.H{"message": "User status updated successfully"})

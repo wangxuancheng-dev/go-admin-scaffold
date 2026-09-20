@@ -49,7 +49,9 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 
 	r.Use(middleware.I18n())
 	r.Use(metrics.Middleware())
-	r.GET("/metrics", metrics.Handler)
+	if cfg.MetricsEnabled() {
+		r.GET("/metrics", metrics.Auth(cfg.Metrics.Token), metrics.Handler)
+	}
 
 	health := openv1.NewHealthHandler(c.DB, c.Redis)
 
@@ -64,15 +66,8 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 	}
 
 	r.Static("/static", "./static")
-	if strings.EqualFold(cfg.Storage.Driver, "local") || cfg.Storage.Driver == "" {
-		uploadPath := cfg.Storage.Local.Path
-		if uploadPath == "" {
-			uploadPath = "storage/uploads"
-		}
-		r.Static("/uploads", uploadPath)
-	}
 
-	wsHandler := handlers.NewWSHandler(c.Auth)
+	wsHandler := handlers.NewWSHandler(c.Auth, cfg.CORS.AllowOrigins)
 	sseHandler := handlers.NewSSEHandler(c.Auth)
 	uploadHandler := corehandlers.NewUploadHandler(c.Storage)
 
@@ -164,6 +159,15 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 		{
 			upload.POST("/file", wrapHandler(uploadHandler.Upload))
 			upload.POST("/files", wrapHandler(uploadHandler.MultiUpload))
+		}
+
+		if strings.EqualFold(cfg.Storage.Driver, "local") || cfg.Storage.Driver == "" {
+			uploadPath := cfg.Storage.Local.Path
+			if uploadPath == "" {
+				uploadPath = "storage/uploads"
+			}
+			// Local files are JWT-gated (not publicly browsable).
+			adminV1Protected.Static("/files", uploadPath)
 		}
 
 		todos := adminV1Protected.Group("/todos")

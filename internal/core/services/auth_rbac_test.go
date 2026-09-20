@@ -53,12 +53,27 @@ func (s *stubUserRepo) ListWithFilters(ctx context.Context, pagination *models.P
 }
 
 func (s *stubUserRepo) Create(ctx context.Context, user *models.User) error { return nil }
+func (s *stubUserRepo) CreateWithRoles(ctx context.Context, user *models.User, roleIDs []uint) error {
+	return nil
+}
+func (s *stubUserRepo) FindBasicByID(ctx context.Context, id uint) (*models.User, error) {
+	return s.FindByID(ctx, id)
+}
 func (s *stubUserRepo) Update(ctx context.Context, user *models.User) error { return nil }
-func (s *stubUserRepo) Delete(ctx context.Context, id uint) error           { return nil }
+func (s *stubUserRepo) UpdateFields(ctx context.Context, id uint, fields map[string]interface{}) error {
+	return nil
+}
+func (s *stubUserRepo) UpdateStatus(ctx context.Context, id uint, status int) error { return nil }
+func (s *stubUserRepo) ExportWithFilters(ctx context.Context, filters *types.UserExportFilters) ([]models.User, error) {
+	return nil, nil
+}
+func (s *stubUserRepo) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
+	return nil
+}
+func (s *stubUserRepo) Delete(ctx context.Context, id uint) error { return nil }
 func (s *stubUserRepo) UpdateLastLogin(ctx context.Context, userID uint) error {
 	return nil
 }
-func (s *stubUserRepo) GetDB() *gorm.DB { return nil }
 
 func testAuthConfig(secret string, superIDs []uint) *config.Config {
 	cfg := &config.Config{

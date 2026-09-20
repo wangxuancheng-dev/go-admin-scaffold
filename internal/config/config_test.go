@@ -34,4 +34,29 @@ func TestConfigValidate_productionHardening(t *testing.T) {
 	err := cfg.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database.host")
+
+	cfg.Database.Host = "localhost"
+	cfg.Database.Database = "go_admin"
+	cfg.Redis.Host = "localhost"
+	cfg.CORS.AllowOrigins = []string{"https://admin.example.com"}
+	err = cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "metrics.token")
+
+	cfg.Metrics.Token = "scrape-secret"
+	require.NoError(t, cfg.Validate())
+}
+
+func TestConfigValidate_rejectsCredentialsWithWildcard(t *testing.T) {
+	cfg := &config.Config{
+		JWT:    config.JWTConfig{Secret: "dev-secret"},
+		Server: config.ServerConfig{Address: ":8080"},
+		CORS: config.CORSConfig{
+			AllowOrigins:     []string{"*"},
+			AllowCredentials: true,
+		},
+	}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allow_credentials")
 }

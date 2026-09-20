@@ -11,6 +11,8 @@
 
 服务端从不信任客户端自报的连接身份；`From` / 频道成员 ID 由 claims 解析出的用户决定。
 
+WebSocket `CheckOrigin` 使用 `cors.allow_origins`：生产禁止 `*`，浏览器必须匹配白名单；无 Origin 的非浏览器客户端仍允许。
+
 ## Connect
 
 ```text

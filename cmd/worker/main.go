@@ -19,6 +19,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("config: %v", err)
+	}
 	if len(cfg.Queue.Queues) == 0 {
 		log.Fatal("no queues configured (queue.queues in config)")
 	}

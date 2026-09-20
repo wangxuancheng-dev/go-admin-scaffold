@@ -16,28 +16,29 @@
 - [x] 用户 / 角色 / 菜单 CRUD
 - [x] 登录日志 / 操作日志
 - [x] 个人资料
-- [x] 文件上传（Local / S3，`internal/core/storage`）
+- [x] 文件上传（Local / S3；UUID 文件名；JWT 保护本地文件）
 - [x] Todo 示例 CRUD
 - [x] i18n locales / translations
 
 ### 实时与可观测
-- [x] WebSocket / SSE（JWT claims 定身份）
+- [x] WebSocket / SSE（JWT claims；WS Origin 对齐 CORS）
 - [x] Trace ID
-- [x] `GET /metrics`
+- [x] `GET /metrics`（token 鉴权；status/method/latency）
 - [x] `GET /api/open/v1/public/live` · `/ready`
 
 ### 基础设施
 - [x] 组合根 DI：`bootstrap.NewContainer(cfg, db, rdb)`
 - [x] 构造注入 Handler / 中间件
+- [x] Service → Repository 边界（User/Role/Todo 接口注入，无 GetDB 穿透）
 - [x] Redis 限流 fail-closed（`RateLimitRedis`）
 - [x] Asynq 队列 + worker / CLI
 - [x] cron 调度 + Redis 锁
 - [x] 迁移 / seeder / artisan
-- [x] CLI：`database.WithContext` / `FromContext`
+- [x] CLI：`database.WithContext` / `FromContext` + `Validate()`
 
 ### 测试与 CI / 文档
 - [x] 核心包单测 + sqlite / miniredis 集成级测
-- [x] GitHub Actions：vet、全量 test、覆盖率门禁、Swagger drift、文档 sanity
+- [x] GitHub Actions：vet、staticcheck、race、覆盖率门禁、Swagger drift、文档 sanity
 - [x] 架构 / 测试 / Realtime / Tracing 文档
 
 ## 核心结构

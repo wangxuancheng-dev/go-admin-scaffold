@@ -21,6 +21,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatal(err)
+	}
 
 	db, err := bootstrap.SetupDatabase(cfg)
 	if err != nil {

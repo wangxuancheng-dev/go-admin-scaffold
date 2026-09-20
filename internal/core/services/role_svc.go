@@ -2,16 +2,16 @@ package services
 
 import (
 	"context"
-	"errors"
 
 	"go-admin-scaffold/internal/core/models"
 	"go-admin-scaffold/internal/core/repositories"
-
-	"gorm.io/gorm"
 )
 
+// ErrAdminRoleProtected is returned when deleting the protected admin role.
+var ErrAdminRoleProtected = repositories.ErrAdminRoleProtected
+
 type RoleService struct {
-	repo    *repositories.RoleRepository
+	repo    RoleRepository
 	permInv PermissionCacheInvalidator
 }
 
@@ -35,7 +35,7 @@ type UpdateRoleMenusRequest struct {
 	MenuIDs []uint `json:"menu_ids" binding:"required"`
 }
 
-func NewRoleService(repo *repositories.RoleRepository, permInv PermissionCacheInvalidator) *RoleService {
+func NewRoleService(repo RoleRepository, permInv PermissionCacheInvalidator) *RoleService {
 	return &RoleService{repo: repo, permInv: permInv}
 }
 
@@ -50,32 +50,17 @@ func (s *RoleService) List(ctx context.Context, pagination *models.Pagination) (
 }
 
 func (s *RoleService) Create(ctx context.Context, req *CreateRoleRequest) (*models.Role, error) {
-	var result *models.Role
-	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		role := &models.Role{
-			Name:        req.Name,
-			Code:        req.Code,
-			Description: req.Description,
-			Status:      req.Status,
-		}
-		if err := tx.Create(role).Error; err != nil {
-			return err
-		}
-		if len(req.MenuIDs) > 0 {
-			if err := s.repo.ReplaceMenus(tx, role.ID, req.MenuIDs); err != nil {
-				return err
-			}
-		}
-		if err := tx.Preload("Menus").First(role, role.ID).Error; err != nil {
-			return err
-		}
-		result = role
-		return nil
-	})
-	if err == nil {
-		s.invalidateAllPermissions(ctx)
+	role := &models.Role{
+		Name:        req.Name,
+		Code:        req.Code,
+		Description: req.Description,
+		Status:      req.Status,
 	}
-	return result, err
+	if err := s.repo.CreateWithMenus(ctx, role, req.MenuIDs); err != nil {
+		return nil, err
+	}
+	s.invalidateAllPermissions(ctx)
+	return role, nil
 }
 
 func (s *RoleService) GetByID(ctx context.Context, id uint) (*models.Role, error) {
@@ -83,66 +68,30 @@ func (s *RoleService) GetByID(ctx context.Context, id uint) (*models.Role, error
 }
 
 func (s *RoleService) Update(ctx context.Context, id uint, req *UpdateRoleRequest) (*models.Role, error) {
-	var result *models.Role
-	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var role models.Role
-		if err := tx.First(&role, id).Error; err != nil {
-			return err
-		}
-		if req.Name != "" {
-			role.Name = req.Name
-		}
-		if req.Code != "" {
-			role.Code = req.Code
-		}
-		if req.Description != "" {
-			role.Description = req.Description
-		}
-		if req.Status != 0 {
-			role.Status = req.Status
-		}
-		if err := tx.Save(&role).Error; err != nil {
-			return err
-		}
-		if req.MenuIDs != nil {
-			if err := s.repo.ReplaceMenus(tx, role.ID, req.MenuIDs); err != nil {
-				return err
-			}
-		}
-		if err := tx.Preload("Menus").First(&role, role.ID).Error; err != nil {
-			return err
-		}
-		result = &role
-		return nil
-	})
-	if err == nil && req.MenuIDs != nil {
+	role := &models.Role{
+		Name:        req.Name,
+		Code:        req.Code,
+		Description: req.Description,
+		Status:      req.Status,
+	}
+	var menuIDs *[]uint
+	if req.MenuIDs != nil {
+		menuIDs = &req.MenuIDs
+	}
+	result, err := s.repo.UpdateWithMenus(ctx, id, role, menuIDs)
+	if err != nil {
+		return nil, err
+	}
+	if req.MenuIDs != nil {
 		s.invalidateAllPermissions(ctx)
 	}
-	return result, err
+	return result, nil
 }
 
 func (s *RoleService) Delete(ctx context.Context, id uint) error {
-	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var role models.Role
-		if err := tx.First(&role, id).Error; err != nil {
-			return err
-		}
-		if role.Code == "admin" {
-			return repositories.ErrAdminRoleProtected
-		}
-		if err := s.repo.DeleteRoleMenus(tx, id); err != nil {
-			return err
-		}
-		if err := s.repo.DeleteUserRolesByRoleID(tx, id); err != nil {
-			return err
-		}
-		return tx.Delete(&models.Role{}, id).Error
-	})
+	err := s.repo.DeleteWithAssociations(ctx, id)
 	if err == nil {
 		s.invalidateAllPermissions(ctx)
-	}
-	if errors.Is(err, repositories.ErrAdminRoleProtected) {
-		return err
 	}
 	return err
 }
@@ -152,13 +101,7 @@ func (s *RoleService) GetMenus(ctx context.Context, roleID uint) ([]models.Menu,
 }
 
 func (s *RoleService) UpdateMenus(ctx context.Context, roleID uint, req *UpdateRoleMenusRequest) error {
-	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var role models.Role
-		if err := tx.First(&role, roleID).Error; err != nil {
-			return err
-		}
-		return s.repo.ReplaceMenus(tx, roleID, req.MenuIDs)
-	})
+	err := s.repo.SetMenus(ctx, roleID, req.MenuIDs)
 	if err == nil {
 		s.invalidateAllPermissions(ctx)
 	}

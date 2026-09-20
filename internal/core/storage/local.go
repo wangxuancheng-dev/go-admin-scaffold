@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-const localURLPrefix = "/uploads"
+// Local files are served only via authenticated admin routes (see routes.SetupRoutes).
+const localURLPrefix = "/api/admin/v1/files"
 
 type localStorage struct {
 	baseDir string

@@ -23,7 +23,7 @@ func withUser(user *models.User) gin.HandlerFunc {
 
 func TestWSHandler_requiresToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := handlers.NewWSHandler(nil)
+	h := handlers.NewWSHandler(nil, nil)
 	r := gin.New()
 	r.GET("/ws", h.HandleWebSocket)
 
@@ -36,7 +36,7 @@ func TestWSHandler_requiresToken(t *testing.T) {
 
 func TestWSHandler_nilAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := handlers.NewWSHandler(nil)
+	h := handlers.NewWSHandler(nil, nil)
 	r := gin.New()
 	r.GET("/ws", h.HandleWebSocket)
 
@@ -49,7 +49,7 @@ func TestWSHandler_nilAuth(t *testing.T) {
 
 func TestWSHandler_joinLeaveFromJWT(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := handlers.NewWSHandler(nil)
+	h := handlers.NewWSHandler(nil, nil)
 	user := &models.User{ID: 1, Username: "alice"}
 	r := gin.New()
 	r.POST("/join", withUser(user), h.JoinGroup)
@@ -73,7 +73,7 @@ func TestWSHandler_joinLeaveFromJWT(t *testing.T) {
 
 func TestWSHandler_joinUnauthorizedWithoutUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := handlers.NewWSHandler(nil)
+	h := handlers.NewWSHandler(nil, nil)
 	r := gin.New()
 	r.POST("/join", h.JoinGroup)
 
@@ -85,7 +85,7 @@ func TestWSHandler_joinUnauthorizedWithoutUser(t *testing.T) {
 
 func TestWSHandler_sendMessageSetsFrom(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := handlers.NewWSHandler(nil)
+	h := handlers.NewWSHandler(nil, nil)
 	user := &models.User{ID: 2, Username: "bob"}
 	r := gin.New()
 	r.POST("/send", withUser(user), h.SendMessage)

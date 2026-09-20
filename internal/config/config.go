@@ -26,9 +26,19 @@ type Config struct {
 	CORS       CORSConfig       `mapstructure:"cors"`
 	Server     ServerConfig     `mapstructure:"server"`
 	Storage    StorageConfig    `mapstructure:"storage"`
+	Metrics    MetricsConfig    `mapstructure:"metrics"`
 	SuperAdmin SuperAdminConfig `mapstructure:"super_admin"`
 	// SuperAdminIDs parsed once at load (from super_admin.user_ids). Not loaded from YAML keys.
 	SuperAdminIDs []uint `yaml:"-" mapstructure:"-"`
+}
+
+// MetricsConfig controls the /metrics endpoint.
+type MetricsConfig struct {
+	// Enabled defaults to true when omitted from YAML.
+	Enabled *bool `mapstructure:"enabled"`
+	// Token when set requires Authorization: Bearer <token> or X-Metrics-Token.
+	// Required in production (Validate).
+	Token string `mapstructure:"token"`
 }
 
 // ServerConfig holds server configuration
@@ -294,6 +304,12 @@ func populateConfigFromViper(v *viper.Viper) (*Config, error) {
 	config.I18n.LoadPath = getEnvOrDefault("I18N_LOAD_PATH", v.GetString("i18n.load_path"))
 	config.I18n.AvailableLocales = v.GetStringSlice("i18n.available_locales")
 
+	config.Metrics.Token = getEnvOrDefault("METRICS_TOKEN", v.GetString("metrics.token"))
+	if v.IsSet("metrics.enabled") {
+		enabled := v.GetBool("metrics.enabled")
+		config.Metrics.Enabled = &enabled
+	}
+
 	config.Storage.Driver = getEnvOrDefault("STORAGE_DRIVER", v.GetString("storage.driver"))
 	config.Storage.Local.Path = getEnvOrDefault("STORAGE_LOCAL_PATH", v.GetString("storage.local.path"))
 	config.Storage.S3.Endpoint = getEnvOrDefault("STORAGE_S3_ENDPOINT", v.GetString("storage.s3.endpoint"))
@@ -357,8 +373,26 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("production: cors.allow_origins must not use wildcard \"*\"")
 			}
 		}
+		if c.MetricsEnabled() && strings.TrimSpace(c.Metrics.Token) == "" {
+			return fmt.Errorf("production: metrics.token is required when metrics are enabled")
+		}
+	}
+	if c.CORS.AllowCredentials {
+		for _, o := range c.CORS.AllowOrigins {
+			if strings.TrimSpace(o) == "*" {
+				return fmt.Errorf("cors: allow_credentials=true is incompatible with allow_origins=\"*\"")
+			}
+		}
 	}
 	return nil
+}
+
+// MetricsEnabled reports whether /metrics should be registered (default true).
+func (c *Config) MetricsEnabled() bool {
+	if c == nil || c.Metrics.Enabled == nil {
+		return true
+	}
+	return *c.Metrics.Enabled
 }
 
 // SuperAdminUintIDs returns super-admin user IDs parsed at load time.

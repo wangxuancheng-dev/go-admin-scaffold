@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"go-admin-scaffold/internal/core/services"
@@ -12,28 +13,58 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
 // WSHandler handles WebSocket endpoints.
 //
 // Auth:
 //   - GET /ws?token=<jwt> — identity from JWT claims only
 //   - POST /ws/join|leave|send — Authorization Bearer; join/leave identity from JWT context
 type WSHandler struct {
-	manager *ws.Manager
-	auth    *services.AuthService
+	manager  *ws.Manager
+	auth     *services.AuthService
+	upgrader websocket.Upgrader
 }
 
-func NewWSHandler(auth *services.AuthService) *WSHandler {
+// NewWSHandler creates a WS handler. allowOrigins comes from CORS config;
+// empty or ["*"] allows any Origin (dev only — production forbids CORS *).
+func NewWSHandler(auth *services.AuthService, allowOrigins []string) *WSHandler {
 	manager := ws.NewManager()
 	go manager.Start()
-	return &WSHandler{manager: manager, auth: auth}
+	allowed := make(map[string]struct{}, len(allowOrigins))
+	allowAll := false
+	for _, o := range allowOrigins {
+		o = strings.TrimSpace(o)
+		if o == "" {
+			continue
+		}
+		if o == "*" {
+			allowAll = true
+			continue
+		}
+		allowed[strings.TrimRight(o, "/")] = struct{}{}
+	}
+	return &WSHandler{
+		manager: manager,
+		auth:    auth,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				origin := strings.TrimRight(strings.TrimSpace(r.Header.Get("Origin")), "/")
+				if origin == "" {
+					// Non-browser clients (CLI / native) often omit Origin.
+					return true
+				}
+				if allowAll {
+					return true
+				}
+				if len(allowed) == 0 {
+					return false
+				}
+				_, ok := allowed[origin]
+				return ok
+			},
+		},
+	}
 }
 
 func (h *WSHandler) HandleWebSocket(c *gin.Context) {
@@ -58,9 +89,8 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		response.ServerError(c)
 		return
 	}
 

@@ -42,12 +42,27 @@ func (r *jwtUserRepo) ListWithFilters(ctx context.Context, pagination *models.Pa
 	return nil, nil
 }
 func (r *jwtUserRepo) Create(ctx context.Context, user *models.User) error { return nil }
+func (r *jwtUserRepo) CreateWithRoles(ctx context.Context, user *models.User, roleIDs []uint) error {
+	return nil
+}
+func (r *jwtUserRepo) FindBasicByID(ctx context.Context, id uint) (*models.User, error) {
+	return r.FindByID(ctx, id)
+}
 func (r *jwtUserRepo) Update(ctx context.Context, user *models.User) error { return nil }
-func (r *jwtUserRepo) Delete(ctx context.Context, id uint) error           { return nil }
+func (r *jwtUserRepo) UpdateFields(ctx context.Context, id uint, fields map[string]interface{}) error {
+	return nil
+}
+func (r *jwtUserRepo) UpdateStatus(ctx context.Context, id uint, status int) error { return nil }
+func (r *jwtUserRepo) ExportWithFilters(ctx context.Context, filters *types.UserExportFilters) ([]models.User, error) {
+	return nil, nil
+}
+func (r *jwtUserRepo) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
+	return nil
+}
+func (r *jwtUserRepo) Delete(ctx context.Context, id uint) error { return nil }
 func (r *jwtUserRepo) UpdateLastLogin(ctx context.Context, userID uint) error {
 	return nil
 }
-func (r *jwtUserRepo) GetDB() *gorm.DB { return nil }
 
 func TestJWT_acceptsValidBearer(t *testing.T) {
 	gin.SetMode(gin.TestMode)

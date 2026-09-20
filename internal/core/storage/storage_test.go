@@ -18,12 +18,12 @@ func TestLocalStorage_PutDeleteURL(t *testing.T) {
 
 	url, err := store.Put("a/b.txt", bytes.NewReader([]byte("hi")))
 	require.NoError(t, err)
-	require.Equal(t, "/uploads/a/b.txt", url)
+	require.Equal(t, "/api/admin/v1/files/a/b.txt", url)
 
 	_, err = os.Stat(filepath.Join(dir, "a", "b.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, "/uploads/a/b.txt", store.URL("a/b.txt"))
+	require.Equal(t, "/api/admin/v1/files/a/b.txt", store.URL("a/b.txt"))
 	require.NoError(t, store.Delete("a/b.txt"))
 }
 
@@ -57,6 +57,6 @@ func TestLocalStorage_emptyPathDefault(t *testing.T) {
 	require.NoError(t, err)
 	url, err := store.Put("x.txt", bytes.NewReader([]byte("1")))
 	require.NoError(t, err)
-	require.Equal(t, "/uploads/x.txt", url)
+	require.Equal(t, "/api/admin/v1/files/x.txt", url)
 	require.NoError(t, store.Delete("missing.txt"))
 }

@@ -1,16 +1,16 @@
 package services
 
 import (
-	"go-admin-scaffold/internal/core/models"
-	"go-admin-scaffold/internal/core/repositories"
 	"context"
+
+	"go-admin-scaffold/internal/core/models"
 )
 
 type TodoService struct {
-	repo *repositories.TodoRepository
+	repo TodoRepository
 }
 
-func NewTodoService(repo *repositories.TodoRepository) *TodoService {
+func NewTodoService(repo TodoRepository) *TodoService {
 	return &TodoService{repo: repo}
 }
 
