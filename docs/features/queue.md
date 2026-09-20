@@ -39,7 +39,7 @@
 ```go
 import (
     "errors"
-    "app/internal/core/jobs"
+    "go-admin-scaffold/internal/core/jobs"
 )
 
 job := jobs.NewProcessOrderJob("20250412001", "recalculate_total")
@@ -123,8 +123,8 @@ queue:
 ```go
 import (
     "context"
-    "app/internal/core/jobs"
-    "app/internal/core/services"
+    "go-admin-scaffold/internal/core/jobs"
+    "go-admin-scaffold/internal/core/services"
 )
 
 ctx := context.Background()

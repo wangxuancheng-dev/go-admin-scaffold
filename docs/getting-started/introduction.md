@@ -22,8 +22,10 @@
 
 1. [快速开始](quick-start.md) — 跑通服务与数据库  
 2. [配置说明](configuration.md) — 改 `configs/config.yaml`  
-3. [队列说明](../features/queue.md) — `worker` 与 `queue-test`  
-4. [定时任务](../features/scheduling.md) — `internal/schedule` 与 `Unique` 任务  
+3. [架构与 DI](../advanced/architecture.md) — Container、分层、`/metrics`  
+4. [测试与 CI](../advanced/testing.md) — 单测约定与覆盖率门禁  
+5. [队列说明](../features/queue.md) — `worker` 与 `queue-test`  
+6. [定时任务](../features/scheduling.md) — `internal/schedule` 与 `Unique` 任务  
 
 ## 仓库与许可
 

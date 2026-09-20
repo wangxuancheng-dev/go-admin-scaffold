@@ -14,7 +14,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RateLimiter is an in-process token-bucket limiter (fallback when Redis is unavailable).
+// RateLimiter is an in-process token-bucket limiter (used by RateLimit and as a local hard cap inside RateLimitRedis).
 type RateLimiter struct {
 	limiters map[string]map[string]*ipLimiter
 	mu       sync.RWMutex

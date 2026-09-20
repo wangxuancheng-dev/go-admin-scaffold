@@ -401,8 +401,8 @@ import (
     "context"
     "fmt"
     "time"
-    "app/internal/models"
-    "app/pkg/cache"
+    "go-admin-scaffold/internal/models"
+    "go-admin-scaffold/pkg/cache"
 )
 
 type UserService struct {
@@ -469,8 +469,8 @@ package main
 
 import (
     "log"
-    "app/internal/config"
-    "app/pkg/cache"
+    "go-admin-scaffold/internal/config"
+    "go-admin-scaffold/pkg/cache"
 )
 
 func initCache(cfg *config.Config) cache.Store {

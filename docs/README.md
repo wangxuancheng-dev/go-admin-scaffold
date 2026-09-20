@@ -31,9 +31,10 @@
 | [部署](deployment/README.md) | 二进制 / Docker 等思路 |
 | [命令行（artisan）](advanced/commands.md) | 自定义命令、注册方式 |
 | [开发说明](advanced/development.md) | 本地开发习惯 |
-| [测试](advanced/testing.md) | 测试约定 |
+| [架构与 DI](advanced/architecture.md) | 组合根、分层、CLI、可观测 |
+| [测试](advanced/testing.md) | 测试约定与 CI |
 | [日志（Zap）](logger.md) | 日志配置 |
-| [Tracing](tracing.md) | 请求追踪 |
+| [Tracing / Metrics](tracing.md) | 请求追踪与 `/metrics` |
 
 ## 示例
 

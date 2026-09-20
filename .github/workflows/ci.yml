@@ -24,20 +24,33 @@ jobs:
       - name: Test (all packages)
         run: go test ./...
 
-      - name: Coverage on core packages
+      - name: Coverage on gated packages
         run: >
           go test -coverprofile=coverage.out -covermode=atomic
           ./internal/bootstrap
           ./internal/core/metrics
           ./internal/core/middleware
-          ./internal/api/admin/middleware
+          ./internal/core/storage
+          ./internal/api/open/v1
+          ./internal/api/admin/handlers
           ./pkg/utils
+          ./pkg/response
+          ./pkg/ginext
 
-      - name: Coverage gate (core packages >= 40%)
+      - name: Coverage gate (gated packages >= 55%)
         run: |
           pct=$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')
-          echo "core package coverage: ${pct}%"
-          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=40 else 1)"
+          echo "gated package coverage: ${pct}%"
+          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=55 else 1)"
+
+      - name: Docs link sanity (required pages exist)
+        run: |
+          test -f docs/README.md
+          test -f docs/advanced/architecture.md
+          test -f docs/advanced/testing.md
+          test -f docs/features/realtime.md
+          test -f docs/tracing.md
+          ! grep -R --include='*.md' -n '"app/' docs || (echo 'docs still contain old module import \"app/\"' && exit 1)
 
       - name: Install swag
         run: go install github.com/swaggo/swag/cmd/swag@latest

@@ -31,7 +31,7 @@
 package models
 
 import (
-    "app/internal/core/models"
+    "go-admin-scaffold/internal/core/models"
 )
 
 type Todo struct {
@@ -73,7 +73,7 @@ package migrations
 
 import (
 	"time"
-	"app/internal/core/models"
+	"go-admin-scaffold/internal/core/models"
 	"gorm.io/gorm"
 )
 
@@ -134,7 +134,7 @@ package repositories
 
 import (
     "context"
-    "app/internal/core/models"
+    "go-admin-scaffold/internal/core/models"
     "gorm.io/gorm"
 )
 
@@ -194,8 +194,8 @@ package services
 
 import (
     "context"
-    "app/internal/core/models"
-    "app/internal/core/repositories"
+    "go-admin-scaffold/internal/core/models"
+    "go-admin-scaffold/internal/core/repositories"
 )
 
 type TodoService struct {
@@ -267,9 +267,9 @@ package v1
 import (
 	"strconv"
 
-	"app/internal/core/models"
-	"app/internal/core/services"
-	"app/pkg/response"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/services"
+	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -455,7 +455,7 @@ todoSvc := services.NewTodoService(todoRepo)
 // 放入 Container，再由 adminv1.NewAdminAPI(c) 构造 TodoHandler
 ```
 
-路由侧使用构造注入的 handler，例如 `api.Todos.ListTodos`，不再经 gin.Context 按请求新建 Service。
+路由侧使用构造注入的 handler，例如 `api.Todos.ListTodos`。
 
 ## 8. API 使用示例
 

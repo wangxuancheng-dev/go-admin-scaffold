@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"go-admin-scaffold/internal/core/services"
@@ -24,10 +22,9 @@ var upgrader = websocket.Upgrader{
 
 // WSHandler handles WebSocket endpoints.
 //
-// Auth strategy:
-//   - GET /ws requires query `token` (JWT). Identity is taken from JWT claims only.
-//   - Optional query `user_id` must match claims username when provided (legacy clients).
-//   - Mutating endpoints (/ws/join|/leave|/send) require Authorization Bearer via JWT middleware.
+// Auth:
+//   - GET /ws?token=<jwt> — identity from JWT claims only
+//   - POST /ws/join|leave|send — Authorization Bearer; join/leave identity from JWT context
 type WSHandler struct {
 	manager *ws.Manager
 	auth    *services.AuthService
@@ -61,22 +58,13 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// Legacy optional check: if client sends user_id, it must equal username from JWT.
-	if q := c.Query("user_id"); q != "" && q != user.Username && q != strconv.FormatUint(uint64(user.ID), 10) {
-		response.UnauthorizedError(c)
-		return
-	}
-
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		response.ServerError(c)
 		return
 	}
 
-	clientID := user.Username
-	if clientID == "" {
-		clientID = fmt.Sprintf("%d", user.ID)
-	}
+	clientID := clientIDFromUser(user)
 	client := &ws.Client{
 		ID:      clientID,
 		Conn:    conn,
@@ -90,10 +78,12 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 }
 
 func (h *WSHandler) JoinGroup(c *gin.Context) {
-	userID := c.Query("user_id")
-	groupID := c.Query("group_id")
-	if userID == "" || groupID == "" {
-		response.ParamError(c, "user_id and group_id are required")
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	groupID, ok := requireGroupID(c)
+	if !ok {
 		return
 	}
 	h.manager.JoinGroup(groupID, userID)
@@ -101,10 +91,12 @@ func (h *WSHandler) JoinGroup(c *gin.Context) {
 }
 
 func (h *WSHandler) LeaveGroup(c *gin.Context) {
-	userID := c.Query("user_id")
-	groupID := c.Query("group_id")
-	if userID == "" || groupID == "" {
-		response.ParamError(c, "user_id and group_id are required")
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	groupID, ok := requireGroupID(c)
+	if !ok {
 		return
 	}
 	h.manager.LeaveGroup(groupID, userID)
@@ -112,11 +104,16 @@ func (h *WSHandler) LeaveGroup(c *gin.Context) {
 }
 
 func (h *WSHandler) SendMessage(c *gin.Context) {
+	from, ok := currentUserID(c)
+	if !ok {
+		return
+	}
 	var message ws.Message
 	if err := c.ShouldBindJSON(&message); err != nil {
 		response.ValidationError(c, err.Error())
 		return
 	}
+	message.From = from
 	message.Timestamp = time.Now().Unix()
 	h.manager.Broadcast <- &message
 	response.Success(c, gin.H{"message": "Message sent successfully"})

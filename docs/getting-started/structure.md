@@ -61,7 +61,7 @@
 └── README.md           # 项目说明
 ```
 
-> 说明：文件存储实现位于 `internal/core/storage`（Local/S3），不再使用 `pkg/storage`。数据模型在 `internal/core/models`。
+> 说明：文件存储在 `internal/core/storage`（Local/S3）；模型在 `internal/core/models`；指标在 `internal/core/metrics`（`GET /metrics`）；依赖组装在 `internal/bootstrap/container.go`。
 
 ## 核心目录说明
 

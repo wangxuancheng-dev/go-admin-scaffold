@@ -52,8 +52,8 @@ go run ./cmd/worker/main.go
 
 ## 5. 验证
 
-- 健康检查：`GET /api/open/v1/public/health`  
-  例：`curl http://localhost:8080/api/open/v1/public/health`
+- 健康检查：`GET /api/open/v1/public/live`（存活）· `GET /api/open/v1/public/ready`（依赖就绪）  
+  例：`curl http://localhost:8080/api/open/v1/public/ready`
 - 非 `production` 时可访问 Swagger：`/swagger/index.html`
 - 队列自检：`go run ./cmd/queue-test`
 

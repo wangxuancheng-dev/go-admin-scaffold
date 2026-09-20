@@ -54,8 +54,3 @@ func (h *HealthHandler) Readiness(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, body)
 }
-
-// HealthCheck keeps the legacy URL; semantics match Readiness.
-func (h *HealthHandler) HealthCheck(c *gin.Context) {
-	h.Readiness(c)
-}

@@ -84,7 +84,6 @@ func OperationLog(logSvc *services.LogService) gin.HandlerFunc {
 func shouldSkipLogging(path string) bool {
 	skipPaths := []string{
 		"/api/admin/v1/logs",
-		"/api/open/v1/public/health",
 		"/api/open/v1/public/live",
 		"/api/open/v1/public/ready",
 		"/api/admin/v1/auth/refresh",

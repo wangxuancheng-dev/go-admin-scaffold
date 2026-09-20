@@ -180,7 +180,6 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 	{
 		public := openV1.Group("/public")
 		{
-			public.GET("/health", wrapHandler(health.HealthCheck))
 			public.GET("/live", wrapHandler(health.Liveness))
 			public.GET("/ready", wrapHandler(health.Readiness))
 		}

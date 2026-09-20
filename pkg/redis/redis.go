@@ -13,7 +13,7 @@ var (
 	once   sync.Once
 )
 
-// Config represents Redis configuration
+// Config represents Redis configuration.
 type Config struct {
 	Host     string `yaml:"host"`
 	Port     string `yaml:"port"`
@@ -21,7 +21,7 @@ type Config struct {
 	DB       int    `yaml:"db"`
 }
 
-// Setup initializes the Redis client and returns it. Safe to call once per process.
+// Setup initializes Redis once per process and returns the client for injection.
 func Setup(cfg *Config) (*redis.Client, error) {
 	var setupErr error
 	once.Do(func() {
@@ -50,12 +50,7 @@ func Setup(cfg *Config) (*redis.Client, error) {
 	return client, nil
 }
 
-// GetClient returns the Redis client instance, or nil if Setup was not called.
-func GetClient() *redis.Client {
-	return client
-}
-
-// Close closes the Redis client connection
+// Close closes the Redis client opened via Setup.
 func Close() error {
 	if client != nil {
 		return client.Close()

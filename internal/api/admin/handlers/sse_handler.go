@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"go-admin-scaffold/internal/core/services"
@@ -16,10 +15,9 @@ import (
 
 // SSEHandler handles Server-Sent Events.
 //
-// Auth strategy mirrors WebSocket:
-//   - GET /sse requires query `token` (JWT); identity comes from claims.
-//   - Optional `user_id` must match username or numeric user id when provided.
-//   - Mutating endpoints require Authorization Bearer via JWT middleware.
+// Auth:
+//   - GET /sse?token=<jwt> — identity from JWT claims only
+//   - POST /sse/* — Authorization Bearer; join/leave identity from JWT context
 type SSEHandler struct {
 	manager *sse.Manager
 	auth    *services.AuthService
@@ -53,15 +51,7 @@ func (h *SSEHandler) HandleSSE(c *gin.Context) {
 		return
 	}
 
-	if q := c.Query("user_id"); q != "" && q != user.Username && q != strconv.FormatUint(uint64(user.ID), 10) {
-		response.UnauthorizedError(c)
-		return
-	}
-
-	userID := user.Username
-	if userID == "" {
-		userID = fmt.Sprintf("%d", user.ID)
-	}
+	userID := clientIDFromUser(user)
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -120,10 +110,12 @@ func (h *SSEHandler) SendNotification(c *gin.Context) {
 }
 
 func (h *SSEHandler) JoinGroup(c *gin.Context) {
-	userID := c.Query("user_id")
-	groupID := c.Query("group_id")
-	if userID == "" || groupID == "" {
-		response.ParamError(c, "user_id and group_id are required")
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	groupID, ok := requireGroupID(c)
+	if !ok {
 		return
 	}
 	h.manager.JoinGroup(groupID, userID)
@@ -131,10 +123,12 @@ func (h *SSEHandler) JoinGroup(c *gin.Context) {
 }
 
 func (h *SSEHandler) LeaveGroup(c *gin.Context) {
-	userID := c.Query("user_id")
-	groupID := c.Query("group_id")
-	if userID == "" || groupID == "" {
-		response.ParamError(c, "user_id and group_id are required")
+	userID, ok := currentUserID(c)
+	if !ok {
+		return
+	}
+	groupID, ok := requireGroupID(c)
+	if !ok {
 		return
 	}
 	h.manager.LeaveGroup(groupID, userID)
