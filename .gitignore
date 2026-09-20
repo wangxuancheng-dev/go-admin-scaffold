@@ -50,8 +50,8 @@ configs/config.yaml
 tmp/
 temp/
 
-# Runtime directories
-storage/
+# Runtime directories (root only; do not ignore Go packages named storage)
+/storage/
 logs/
 
 # Frontend specific

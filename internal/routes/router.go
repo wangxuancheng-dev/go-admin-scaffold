@@ -57,6 +57,13 @@ func SetupRoutes(r *gin.Engine, cfg *config.Config) error {
 
 	// Serve static files
 	r.Static("/static", "./static")
+	if strings.EqualFold(cfg.Storage.Driver, "local") || cfg.Storage.Driver == "" {
+		uploadPath := cfg.Storage.Local.Path
+		if uploadPath == "" {
+			uploadPath = "storage/uploads"
+		}
+		r.Static("/uploads", uploadPath)
+	}
 
 	// Admin API routes (v1)
 	adminV1 := r.Group("/api/admin/v1")
