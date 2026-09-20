@@ -2,8 +2,9 @@ APP_NAME=go-admin-base
 BUILD_DIR=build
 MAIN_FILE=cmd/server/main.go
 WORKER_FILE=cmd/worker/main.go
+SCHEDULER_FILE=cmd/scheduler/main.go
 
-.PHONY: all build clean run test worker
+.PHONY: all build clean run test worker scheduler
 
 all: build
 
@@ -12,6 +13,8 @@ build:
 	@go build -o $(BUILD_DIR)/$(APP_NAME) $(MAIN_FILE)
 	@echo "Building worker..."
 	@go build -o $(BUILD_DIR)/$(APP_NAME)-worker $(WORKER_FILE)
+	@echo "Building scheduler..."
+	@go build -o $(BUILD_DIR)/$(APP_NAME)-scheduler $(SCHEDULER_FILE)
 
 clean:
 	@echo "Cleaning..."

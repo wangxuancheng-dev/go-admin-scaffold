@@ -46,11 +46,17 @@ func Init(config *Config) error {
 	return initErr
 }
 
-// GetInstance returns the singleton instance of I18n
+// GetInstance returns the singleton instance of I18n.
+// Panics if Init has not succeeded — prefer Instance() at composition boundaries.
 func GetInstance() *I18n {
 	if instance == nil {
 		panic("I18n not initialized")
 	}
+	return instance
+}
+
+// Instance returns the process i18n handle, or nil if Init has not run successfully.
+func Instance() *I18n {
 	return instance
 }
 

@@ -55,7 +55,9 @@ func Setup(cfg *Config, rdb *goredis.Client) error {
 	}
 }
 
-// Default returns the default cache instance
+// Default returns the process-level cache set by Setup.
+// Prefer injecting Cache (or *redis.Client) via the composition root for HTTP paths;
+// Default is for CLI / legacy helpers that are not wired through Container.
 func Default() Cache {
 	return defaultCache
 }

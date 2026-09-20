@@ -8,36 +8,45 @@
 # 全量
 go test ./...
 
-# 核心包覆盖率（与 CI 门禁包一致）
+# 基础设施门禁包（CI ≥ 65%）
 go test -coverprofile=coverage.out -covermode=atomic \
   ./internal/bootstrap \
   ./internal/core/metrics \
   ./internal/core/middleware \
   ./internal/core/storage \
+  ./internal/core/handlers \
   ./internal/api/open/v1 \
   ./internal/api/admin/handlers \
+  ./internal/routes \
   ./pkg/utils \
   ./pkg/response \
   ./pkg/ginext
 
+# 业务层门禁包（CI ≥ 20%，逐步上调）
+go test -coverprofile=coverage-svc.out -covermode=atomic \
+  ./internal/core/services \
+  ./internal/core/repositories
+
 go tool cover -func=coverage.out
+go tool cover -func=coverage-svc.out
 ```
 
 CI（`.github/workflows/ci.yml`）还会：
 
-1. `go mod verify` + `go vet ./...`
-2. 全量 `go test ./...`
-3. 上表核心包覆盖率门槛（≥ 55%）
-4. 文档完整性检查
-5. Swagger 产物漂移检查（`swag init` 后 `git diff --exit-code`）
+1. `go mod verify` + `go vet ./...` + `staticcheck`
+2. 全量 `go test -race ./...`
+3. 基础设施覆盖率门槛（≥ 65%，含 `routes`）
+4. services/repositories 覆盖率门槛（≥ 20%）
+5. 文档完整性检查
+6. Swagger 产物漂移检查（`swag init` 后 `git diff --exit-code`）
 
 ## 策略
 
 | 层级 | 做法 | 示例 |
 |------|------|------|
-| 单元 | mock / stub 接口 | `UserServiceAPI` mock、`RBACPermissionStore` 内存实现 |
-| HTTP | `httptest` + Gin TestMode | `admin/v1` Handler、JWT/RBAC、WS/SSE |
-| 集成级 | 纯 Go sqlite（glebarez）/ miniredis | `RBACRepository`、`RateLimitRedis`、Role CRUD |
+| 单元 | mock / stub 接口 | `UserServiceAPI` / `RoleServiceAPI` mock、`RBACPermissionStore` 内存实现 |
+| HTTP | `httptest` + Gin TestMode | `admin/v1` Handler、JWT/RBAC、WS/SSE、routes 冒烟 |
+| 集成级 | 纯 Go sqlite（glebarez）/ miniredis | `RBACRepository`、`RateLimitRedis`、Todo/Role CRUD |
 | 组合根 | 空 `*gorm.DB` 仅验证接线 | `bootstrap.NewContainer` |
 
 测试里直接 `NewXxxHandler(deps)` 或 `middleware.JWT(authSvc)`；Realtime join/leave 需在 context 里 `Set("user", *models.User)`。
@@ -63,12 +72,13 @@ import (
 - `internal/api/admin/v1/user_test.go`
 - `internal/api/admin/middleware/jwt_rbac_test.go`
 - `internal/api/admin/handlers/handlers_test.go`
+- `internal/core/services/todo_service_test.go`
 
 ## 仓储集成级
 
 ```go
 db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
-// AutoMigrate 后 repositories.NewRBACRepository(db)
+// AutoMigrate 后 repositories.NewTodoRepository(db)
 ```
 
 ## 限流 / Redis

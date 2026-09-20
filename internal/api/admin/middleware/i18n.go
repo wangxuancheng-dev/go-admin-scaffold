@@ -11,27 +11,23 @@ const (
 	localeKey     = "locale"
 )
 
-// I18n returns a middleware that handles locale selection
-func I18n() gin.HandlerFunc {
+// I18n returns middleware that stores the request locale on the gin context.
+// Pass the process i18n instance from the composition root (after i18n.Init).
+// If inst is nil, defaults to "en" without calling the i18n singleton.
+func I18n(inst *i18n.I18n) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		i18nInst := i18n.GetInstance()
-
-		// Try to get locale from query parameter
 		locale := c.Query(localeKey)
-
-		// If not in query, try header
 		if locale == "" {
 			locale = c.GetHeader("Accept-Language")
 		}
-
-		// If still not found, use default
 		if locale == "" {
-			locale = i18nInst.GetDefaultLocale()
+			if inst != nil {
+				locale = inst.GetDefaultLocale()
+			} else {
+				locale = defaultLocale
+			}
 		}
-
-		// Store locale in context
 		c.Set(localeKey, locale)
-
 		c.Next()
 	}
 }

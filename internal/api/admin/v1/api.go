@@ -32,4 +32,8 @@ func NewAdminAPI(c *bootstrap.Container) *AdminAPI {
 }
 
 // Ensure interfaces used by handlers stay intentional.
-var _ services.UserServiceAPI = (*services.UserService)(nil)
+var (
+	_ services.UserServiceAPI = (*services.UserService)(nil)
+	_ services.RoleServiceAPI = (*services.RoleService)(nil)
+	_ services.MenuServiceAPI = (*services.MenuService)(nil)
+)

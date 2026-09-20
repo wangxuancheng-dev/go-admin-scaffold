@@ -15,8 +15,11 @@ import (
 
 // SSEHandler handles Server-Sent Events.
 //
-// Auth:
-//   - GET /sse?token=<jwt> — identity from JWT claims only
+// Auth (connect):
+//   - Prefer Authorization: Bearer <jwt>
+//   - Legacy: GET /sse?token=<jwt> (may leak via access logs)
+//
+// Auth (control):
 //   - POST /sse/* — Authorization Bearer; join/leave identity from JWT context
 type SSEHandler struct {
 	manager *sse.Manager
@@ -30,9 +33,9 @@ func NewSSEHandler(auth *services.AuthService) *SSEHandler {
 }
 
 func (h *SSEHandler) HandleSSE(c *gin.Context) {
-	token := c.Query("token")
+	token, _ := extractRealtimeToken(c)
 	if token == "" {
-		response.ParamError(c, "token is required")
+		response.ParamError(c, "token is required (Authorization Bearer or ?token=)")
 		return
 	}
 	if h.auth == nil {

@@ -15,9 +15,13 @@ import (
 
 // WSHandler handles WebSocket endpoints.
 //
-// Auth:
-//   - GET /ws?token=<jwt> — identity from JWT claims only
-//   - POST /ws/join|leave|send — Authorization Bearer; join/leave identity from JWT context
+// Auth (connect):
+//   - Prefer Authorization: Bearer <jwt>
+//   - Or Sec-WebSocket-Protocol: access_token.<jwt>
+//   - Legacy: GET /ws?token=<jwt> (may leak via access logs)
+//
+// Auth (control):
+//   - POST /ws/join|leave|send — Authorization Bearer; identity from JWT context
 type WSHandler struct {
 	manager  *ws.Manager
 	auth     *services.AuthService
@@ -68,9 +72,9 @@ func NewWSHandler(auth *services.AuthService, allowOrigins []string) *WSHandler 
 }
 
 func (h *WSHandler) HandleWebSocket(c *gin.Context) {
-	token := c.Query("token")
+	token, selectedProto := extractRealtimeToken(c)
 	if token == "" {
-		response.ParamError(c, "token is required")
+		response.ParamError(c, "token is required (Authorization Bearer, Sec-WebSocket-Protocol access_token.<jwt>, or ?token=)")
 		return
 	}
 	if h.auth == nil {
@@ -89,7 +93,13 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
+	var respHeader http.Header
+	if selectedProto != "" {
+		respHeader = http.Header{}
+		respHeader.Set("Sec-WebSocket-Protocol", selectedProto)
+	}
+
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, respHeader)
 	if err != nil {
 		return
 	}

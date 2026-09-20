@@ -12,6 +12,7 @@ import (
 	corehandlers "go-admin-scaffold/internal/core/handlers"
 	coremiddleware "go-admin-scaffold/internal/core/middleware"
 	"go-admin-scaffold/internal/core/metrics"
+	"go-admin-scaffold/pkg/i18n"
 	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
@@ -47,7 +48,7 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 	limitCaptcha := coremiddleware.RateLimitRedis(rdb, 200*time.Millisecond, 40)
 	limitRefresh := coremiddleware.RateLimitRedis(rdb, 200*time.Millisecond, 30)
 
-	r.Use(middleware.I18n())
+	r.Use(middleware.I18n(i18n.Instance()))
 	r.Use(metrics.Middleware())
 	if cfg.MetricsEnabled() {
 		r.GET("/metrics", metrics.Auth(cfg.Metrics.Token), metrics.Handler)
@@ -186,11 +187,6 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 		{
 			public.GET("/live", wrapHandler(health.Liveness))
 			public.GET("/ready", wrapHandler(health.Readiness))
-		}
-		oauth := openV1.Group("/oauth")
-		{
-			oauth.GET("/github", wrapHandler(openv1.GithubOAuth))
-			oauth.GET("/github/callback", wrapHandler(openv1.GithubOAuthCallback))
 		}
 	}
 

@@ -106,6 +106,10 @@ metrics:
   # Required when app.env=production. Scrape with Authorization: Bearer <token> or X-Metrics-Token.
   token: ""
 
+# Cron: default embeds in cmd/server. For production split, set run_in_server=false and run cmd/scheduler.
+scheduler:
+  run_in_server: true
+
 i18n:
   default_locale: "en"
   load_path: "./locales"

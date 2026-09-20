@@ -60,3 +60,12 @@ func TestConfigValidate_rejectsCredentialsWithWildcard(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "allow_credentials")
 }
+
+func TestConfig_SchedulerRunInServerDefault(t *testing.T) {
+	cfg := &config.Config{}
+	require.True(t, cfg.SchedulerRunInServer())
+
+	off := false
+	cfg.Scheduler.RunInServer = &off
+	require.False(t, cfg.SchedulerRunInServer())
+}

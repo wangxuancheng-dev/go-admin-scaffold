@@ -40,12 +40,3 @@ func TestHealthHandler_readinessFailsWithoutDeps(t *testing.T) {
 	assert.Equal(t, "not_ready", body["status"])
 }
 
-func TestOAuthStubs(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.GET("/oauth", openv1.GithubOAuth)
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/oauth", nil)
-	r.ServeHTTP(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
-}

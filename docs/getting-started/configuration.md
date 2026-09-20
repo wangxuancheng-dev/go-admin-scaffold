@@ -36,6 +36,8 @@ if err := cfg.Validate(); err != nil { /* 生产环境强校验 */ }
 | `cache` | `driver`：`redis` / `file` 及 `options` |
 | `storage` | `local` 或 `s3` |
 | `cors` | 跨域；生产勿使用 `allow_origins: ["*"]` |
+| `metrics` | `/metrics` 开关与 scrape token |
+| `scheduler` | `run_in_server`：HTTP 是否内嵌 cron（默认 true）；生产可 false + `cmd/scheduler` |
 | `i18n` | 默认语言、加载路径、可用语言列表 |
 
 ## 环境变量覆盖

@@ -21,6 +21,29 @@ type UserServiceAPI interface {
 	IsSuperAdmin(userID uint) bool
 }
 
+// RoleServiceAPI is the subset of role operations used by admin HTTP handlers.
+type RoleServiceAPI interface {
+	List(ctx context.Context, pagination *models.Pagination) ([]models.Role, error)
+	Create(ctx context.Context, req *CreateRoleRequest) (*models.Role, error)
+	GetByID(ctx context.Context, id uint) (*models.Role, error)
+	Update(ctx context.Context, id uint, req *UpdateRoleRequest) (*models.Role, error)
+	Delete(ctx context.Context, id uint) error
+	GetMenus(ctx context.Context, roleID uint) ([]models.Menu, error)
+	UpdateMenus(ctx context.Context, roleID uint, req *UpdateRoleMenusRequest) error
+}
+
+// MenuServiceAPI is the subset of menu operations used by admin HTTP handlers.
+type MenuServiceAPI interface {
+	GetAll(ctx context.Context) ([]models.Menu, error)
+	GetTree(ctx context.Context) ([]models.Menu, error)
+	GetUserMenus(ctx context.Context, userID uint) ([]MenuRouteItem, error)
+	Create(ctx context.Context, req *CreateMenuRequest) (*models.Menu, error)
+	GetByID(ctx context.Context, id uint) (*models.Menu, error)
+	Update(ctx context.Context, id uint, req *UpdateMenuRequest) (*models.Menu, error)
+	Delete(ctx context.Context, id uint) error
+	UpdateMenuRoles(ctx context.Context, menuID uint, roleIDs []uint) error
+}
+
 // UserRepository defines the interface for user data access
 type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*models.User, error)
@@ -68,4 +91,19 @@ type LogRepository interface {
 	ListOperationLogs(ctx context.Context, pagination *models.Pagination, query map[string]interface{}) ([]models.OperationLog, error)
 	GetLoginLogsByUserID(ctx context.Context, userID uint, limit int) ([]models.LoginLog, error)
 	GetOperationLogsByUserID(ctx context.Context, userID uint, limit int) ([]models.OperationLog, error)
+}
+
+// MenuRepository defines the interface for menu data access
+type MenuRepository interface {
+	FindByID(ctx context.Context, id uint) (*models.Menu, error)
+	FindAll(ctx context.Context) ([]models.Menu, error)
+	FindByParentID(ctx context.Context, parentID *uint) ([]models.Menu, error)
+	FindTree(ctx context.Context) ([]models.Menu, error)
+	FindByRoleIDs(ctx context.Context, roleIDs []uint) ([]models.Menu, error)
+	FindVisibleMenus(ctx context.Context) ([]models.Menu, error)
+	Create(ctx context.Context, menu *models.Menu) error
+	Update(ctx context.Context, menu *models.Menu) error
+	Delete(ctx context.Context, id uint) error
+	UpdateMenuRoles(ctx context.Context, menuID uint, roleIDs []uint) error
+	GetMaxSort(ctx context.Context, parentID *uint) (int, error)
 }

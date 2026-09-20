@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"go-admin-scaffold/cmd/server/setup"
-	_ "go-admin-scaffold/docs" // 导入 swagger 文档
+	_ "go-admin-scaffold/docs" // swagger docs
 	"go-admin-scaffold/internal/commands"
 	"go-admin-scaffold/internal/config"
 	"go-admin-scaffold/internal/schedule"
@@ -26,43 +26,43 @@ import (
 // @host localhost:8080
 // @BasePath /api
 func main() {
-	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Initialize the HTTP server (database, Redis, cache, logger, routes)
 	app, err := setup.InitializeApp()
 	if err != nil {
 		log.Fatalf("Failed to initialize app: %v", err)
 	}
 
-	// Scheduler uses the same Redis client as the app container
-	rdb := app.Container().Redis
-	if rdb == nil {
-		log.Fatal("redis client is nil")
-	}
-	redisLocker := locker.NewRedisLocker(rdb)
-
-	manager := console.NewManager()
-	manager.Register(commands.NewMigrateCommand())
-	manager.Register(commands.NewSeedCommand())
-	manager.Register(commands.NewMakeCommand())
-
-	scheduler := schedule.NewScheduler(manager, redisLocker)
-	kernel := schedule.NewKernel(scheduler)
-
-	ctx, cancel := context.WithCancel(database.WithContext(context.Background(), app.Container().DB))
-	defer cancel()
-
-	go func() {
-		if err := kernel.Start(ctx); err != nil {
-			log.Printf("Scheduler error: %v", err)
+	var kernel *schedule.Kernel
+	if cfg.SchedulerRunInServer() {
+		rdb := app.Container().Redis
+		if rdb == nil {
+			log.Fatal("redis client is nil")
 		}
-	}()
+		redisLocker := locker.NewRedisLocker(rdb)
+		manager := console.NewManager()
+		manager.Register(commands.NewMigrateCommand())
+		manager.Register(commands.NewSeedCommand())
+		manager.Register(commands.NewMakeCommand())
 
-	// Start HTTP server in a goroutine
+		scheduler := schedule.NewScheduler(manager, redisLocker)
+		kernel = schedule.NewKernel(scheduler)
+
+		ctx, cancel := context.WithCancel(database.WithContext(context.Background(), app.Container().DB))
+		defer cancel()
+
+		go func() {
+			if err := kernel.Start(ctx); err != nil {
+				log.Printf("Scheduler error: %v", err)
+			}
+		}()
+	} else {
+		log.Println("scheduler.run_in_server=false; cron not started (use cmd/scheduler)")
+	}
+
 	srv := &http.Server{
 		Addr:    cfg.Server.Address,
 		Handler: app.Engine(),
@@ -75,26 +75,23 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	// Shutdown gracefully
 	log.Println("Shutting down server...")
 
-	// Create a deadline for graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 
-	// Shutdown HTTP server
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
-	// Stop scheduler
-	log.Println("Shutting down scheduler...")
-	kernel.Stop()
+	if kernel != nil {
+		log.Println("Shutting down scheduler...")
+		kernel.Stop()
+	}
 
 	if c := app.Container(); c != nil && c.Redis != nil {
 		if err := c.Redis.Close(); err != nil {

@@ -5,15 +5,15 @@
 启动顺序（`cmd/server/setup`）：
 
 1. `config.LoadConfig` + `Validate`
-2. logger / `SetupDatabase` → `*gorm.DB` / `SetupRedis` → `*redis.Client` / `SetupCache(cfg, rdb)`
+2. logger / `SetupDatabase` → `*gorm.DB` / `SetupRedis` → `*redis.Client` / `SetupCache(cfg, rdb)` / `i18n.Init`
 3. `bootstrap.NewContainer(cfg, db, rdb)` — **只组装一次**
-4. `routes.SetupRoutes(engine, container)` — Handler / 中间件构造注入
+4. `routes.SetupRoutes(engine, container)` — Handler / 中间件构造注入（含 `middleware.I18n(i18n.Instance())`）
 
 ```text
 SetupDB/Redis → NewContainer → AdminAPI / JWT / RBAC / OpLog / Upload / Health
 ```
 
-HTTP 路径一律构造注入，不按请求 `New` Service。
+HTTP 路径一律构造注入，不按请求 `New` Service。Handler 依赖 `UserServiceAPI` / `RoleServiceAPI` / `MenuServiceAPI` 等接口。
 
 ## 分层
 
@@ -29,6 +29,11 @@ HTTP 路径一律构造注入，不按请求 `New` Service。
 
 扩展业务：在 Container 接线 → 新增 Handler 方法 → `router.go` 挂路由。
 
+## 调度
+
+- 默认：`cmd/server` 内嵌 cron（`scheduler.run_in_server` 默认 true）
+- 生产拆分：配置 `scheduler.run_in_server: false`，另起 `cmd/scheduler`
+
 ## CLI
 
 ```go
@@ -37,6 +42,8 @@ ctx := database.WithContext(context.Background(), db)
 manager.RunFromArgsWithContext(ctx)
 // 命令内：database.FromContext(ctx)
 ```
+
+`cmd/artisan` 与 `cmd/tools` 共用 `internal/commands`；开发用 artisan，运维脚本可用 tools。
 
 ## 可观测
 

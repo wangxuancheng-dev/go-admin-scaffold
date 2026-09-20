@@ -27,6 +27,7 @@ type Config struct {
 	Server     ServerConfig     `mapstructure:"server"`
 	Storage    StorageConfig    `mapstructure:"storage"`
 	Metrics    MetricsConfig    `mapstructure:"metrics"`
+	Scheduler  SchedulerConfig  `mapstructure:"scheduler"`
 	SuperAdmin SuperAdminConfig `mapstructure:"super_admin"`
 	// SuperAdminIDs parsed once at load (from super_admin.user_ids). Not loaded from YAML keys.
 	SuperAdminIDs []uint `yaml:"-" mapstructure:"-"`
@@ -39,6 +40,12 @@ type MetricsConfig struct {
 	// Token when set requires Authorization: Bearer <token> or X-Metrics-Token.
 	// Required in production (Validate).
 	Token string `mapstructure:"token"`
+}
+
+// SchedulerConfig controls whether the HTTP server embeds the cron kernel.
+type SchedulerConfig struct {
+	// RunInServer defaults to true when omitted. Set false and run cmd/scheduler separately in production.
+	RunInServer *bool `mapstructure:"run_in_server"`
 }
 
 // ServerConfig holds server configuration
@@ -310,6 +317,11 @@ func populateConfigFromViper(v *viper.Viper) (*Config, error) {
 		config.Metrics.Enabled = &enabled
 	}
 
+	if v.IsSet("scheduler.run_in_server") {
+		runInServer := v.GetBool("scheduler.run_in_server")
+		config.Scheduler.RunInServer = &runInServer
+	}
+
 	config.Storage.Driver = getEnvOrDefault("STORAGE_DRIVER", v.GetString("storage.driver"))
 	config.Storage.Local.Path = getEnvOrDefault("STORAGE_LOCAL_PATH", v.GetString("storage.local.path"))
 	config.Storage.S3.Endpoint = getEnvOrDefault("STORAGE_S3_ENDPOINT", v.GetString("storage.s3.endpoint"))
@@ -393,6 +405,14 @@ func (c *Config) MetricsEnabled() bool {
 		return true
 	}
 	return *c.Metrics.Enabled
+}
+
+// SchedulerRunInServer reports whether the HTTP process should embed cron (default true).
+func (c *Config) SchedulerRunInServer() bool {
+	if c == nil || c.Scheduler.RunInServer == nil {
+		return true
+	}
+	return *c.Scheduler.RunInServer
 }
 
 // SuperAdminUintIDs returns super-admin user IDs parsed at load time.

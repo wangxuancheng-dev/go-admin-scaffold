@@ -13,10 +13,10 @@ import (
 
 // MenuHandler handles menu management endpoints.
 type MenuHandler struct {
-	menus *services.MenuService
+	menus services.MenuServiceAPI
 }
 
-func NewMenuHandler(menus *services.MenuService) *MenuHandler {
+func NewMenuHandler(menus services.MenuServiceAPI) *MenuHandler {
 	return &MenuHandler{menus: menus}
 }
 

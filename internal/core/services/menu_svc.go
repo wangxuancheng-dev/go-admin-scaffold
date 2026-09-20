@@ -14,20 +14,6 @@ var (
 	ErrMenuHasChildren = errors.New("menu has children, cannot delete")
 )
 
-type MenuRepository interface {
-	FindByID(ctx context.Context, id uint) (*models.Menu, error)
-	FindAll(ctx context.Context) ([]models.Menu, error)
-	FindByParentID(ctx context.Context, parentID *uint) ([]models.Menu, error)
-	FindTree(ctx context.Context) ([]models.Menu, error)
-	FindByRoleIDs(ctx context.Context, roleIDs []uint) ([]models.Menu, error)
-	FindVisibleMenus(ctx context.Context) ([]models.Menu, error)
-	Create(ctx context.Context, menu *models.Menu) error
-	Update(ctx context.Context, menu *models.Menu) error
-	Delete(ctx context.Context, id uint) error
-	UpdateMenuRoles(ctx context.Context, menuID uint, roleIDs []uint) error
-	GetMaxSort(ctx context.Context, parentID *uint) (int, error)
-}
-
 type MenuService struct {
 	menuRepo MenuRepository
 	userRepo UserRepository

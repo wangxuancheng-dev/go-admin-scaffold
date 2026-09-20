@@ -14,11 +14,11 @@ import (
 
 // RoleHandler handles role management endpoints.
 type RoleHandler struct {
-	roles *services.RoleService
-	menus *services.MenuService
+	roles services.RoleServiceAPI
+	menus services.MenuServiceAPI
 }
 
-func NewRoleHandler(roles *services.RoleService, menus *services.MenuService) *RoleHandler {
+func NewRoleHandler(roles services.RoleServiceAPI, menus services.MenuServiceAPI) *RoleHandler {
 	return &RoleHandler{roles: roles, menus: menus}
 }
 

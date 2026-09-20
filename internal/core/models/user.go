@@ -1,6 +1,7 @@
 package models
 
 import (
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -27,12 +28,14 @@ func (User) TableName() string {
 
 // BeforeSave hook is called before saving the user
 func (u *User) BeforeSave(tx *gorm.DB) error {
-	// Add any validation or data processing before save
 	return nil
 }
 
-// ValidatePassword checks if the provided password matches the user's password
-func (u *User) ValidatePassword(password string) bool {
-	// TODO: Implement password validation using bcrypt
-	return false
+// ValidatePassword reports whether plain matches the stored bcrypt hash.
+// Prefer AuthService for login flows; this helper is for model-level checks.
+func (u *User) ValidatePassword(plain string) bool {
+	if u == nil || u.Password == "" || plain == "" {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(plain)) == nil
 }
