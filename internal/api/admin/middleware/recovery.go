@@ -10,21 +10,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Recovery returns a middleware that recovers from any panics and writes a 500 if there was one.
-func Recovery() gin.HandlerFunc {
+// Recovery returns a middleware that recovers from panics and writes a 500 response.
+func Recovery(log logger.ContextLogger) gin.HandlerFunc {
+	if log == nil {
+		log = logger.Default()
+	}
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				// Log the error and stack trace
 				stack := string(debug.Stack())
-				logger.Error(c.Request.Context(), "Panic recovered",
+				log.Error(c.Request.Context(), "Panic recovered",
 					"error", err,
 					"stack", stack,
 					"path", c.Request.URL.Path,
 					"method", c.Request.Method,
 				)
 
-				// Get error message
 				var message string
 				switch v := err.(type) {
 				case error:
@@ -35,7 +36,6 @@ func Recovery() gin.HandlerFunc {
 					message = fmt.Sprintf("%v", v)
 				}
 
-				// Respond with 500 error
 				if !c.IsAborted() {
 					response.Error(c, response.CodeServerError, message)
 				}

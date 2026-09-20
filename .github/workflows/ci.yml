@@ -45,11 +45,11 @@ jobs:
           ./pkg/response
           ./pkg/ginext
 
-      - name: Coverage gate (gated packages >= 63%)
+      - name: Coverage gate (gated packages >= 65%)
         run: |
           pct=$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')
           echo "gated package coverage: ${pct}%"
-          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=63 else 1)"
+          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=65 else 1)"
 
       - name: Coverage on services + repositories
         run: >

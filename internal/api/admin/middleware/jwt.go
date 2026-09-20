@@ -10,8 +10,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// JWT validates Bearer tokens using the process-scoped AuthService.
-func JWT(authSvc *services.AuthService) gin.HandlerFunc {
+// JWT validates Bearer tokens using the injected AuthService and ContextLogger.
+func JWT(authSvc *services.AuthService, log logger.ContextLogger) gin.HandlerFunc {
+	if log == nil {
+		log = logger.Default()
+	}
 	return func(c *gin.Context) {
 		if authSvc == nil {
 			response.ServerError(c)
@@ -28,7 +31,7 @@ func JWT(authSvc *services.AuthService) gin.HandlerFunc {
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			logger.Warn(c.Request.Context(), "invalid authorization header format")
+			log.Warn(c.Request.Context(), "invalid authorization header format")
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -36,7 +39,7 @@ func JWT(authSvc *services.AuthService) gin.HandlerFunc {
 
 		claims, err := authSvc.ValidateToken(parts[1])
 		if err != nil {
-			logger.Warn(c.Request.Context(), "jwt validation failed", "error", err)
+			log.Warn(c.Request.Context(), "jwt validation failed", "error", err)
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -44,7 +47,7 @@ func JWT(authSvc *services.AuthService) gin.HandlerFunc {
 
 		user, err := authSvc.GetUserFromClaims(c.Request.Context(), claims)
 		if err != nil || user == nil {
-			logger.Warn(c.Request.Context(), "get user from jwt claims failed", "error", err)
+			log.Warn(c.Request.Context(), "get user from jwt claims failed", "error", err)
 			response.UnauthorizedError(c)
 			c.Abort()
 			return

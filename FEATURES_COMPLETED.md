@@ -39,8 +39,9 @@
 
 ### 测试与 CI / 文档
 - [x] 核心包单测 + sqlite / miniredis 集成级测
-- [x] GitHub Actions：vet、staticcheck、race、infra≥63%、services/repos≥70%、Swagger drift、文档 sanity
+- [x] GitHub Actions：vet、staticcheck、race、infra≥65%、services/repos≥70%、Swagger drift、文档 sanity
 - [x] 架构 / 测试 / Realtime / Tracing 文档
+- [x] HTTP 中间件注入 `logger.ContextLogger`（组合根 `Container.Logger`）
 
 ## 核心结构
 

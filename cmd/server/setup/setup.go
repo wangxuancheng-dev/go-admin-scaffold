@@ -71,7 +71,7 @@ func InitializeApp() (*App, error) {
 	engine := gin.New()
 	engine.Use(middleware.Trace())
 	engine.Use(gin.Logger())
-	engine.Use(middleware.Recovery())
+	engine.Use(middleware.Recovery(container.Logger))
 	engine.Use(middleware.CORS(&cfg.CORS))
 
 	if err := routes.SetupRoutes(engine, container); err != nil {

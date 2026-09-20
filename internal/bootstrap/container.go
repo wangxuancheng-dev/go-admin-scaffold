@@ -8,6 +8,7 @@ import (
 	"go-admin-scaffold/internal/core/services"
 	"go-admin-scaffold/internal/core/storage"
 	"go-admin-scaffold/pkg/cache"
+	"go-admin-scaffold/pkg/logger"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -19,6 +20,7 @@ type Container struct {
 	DB     *gorm.DB
 	Redis  *redis.Client
 	Cache  cache.Cache
+	Logger logger.ContextLogger
 
 	Log      *services.LogService
 	User     *services.UserService
@@ -85,6 +87,7 @@ func NewContainerWithCache(cfg *config.Config, db *gorm.DB, rdb *redis.Client, c
 		DB:       db,
 		Redis:    rdb,
 		Cache:    cch,
+		Logger:   logger.Default(),
 		Log:      logSvc,
 		User:     userSvc,
 		Auth:     authSvc,

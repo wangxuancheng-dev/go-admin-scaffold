@@ -73,7 +73,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		task := task // Create new variable for closure
 		_, err := s.cron.AddFunc(task.Schedule, func() {
 			if err := s.runTask(ctx, task); err != nil {
-				logger.Sugared().Errorw("scheduler task failed", "task", task.Name, "error", err)
+				logger.Error(ctx, "scheduler task failed", "task", task.Name, "error", err)
 			}
 		})
 		if err != nil {
@@ -104,14 +104,14 @@ func (s *Scheduler) runTask(ctx context.Context, task Task) error {
 	}
 
 	if !acquired {
-		logger.Sugared().Infow("scheduler task skipped, lock held elsewhere", "task", task.Name)
+		logger.Info(ctx, "scheduler task skipped, lock held elsewhere", "task", task.Name)
 		return nil
 	}
 
 	// Run the task and ensure we release the lock afterward
 	defer func() {
 		if err := s.locker.Unlock(ctx, lockKey); err != nil {
-			logger.Sugared().Warnw("scheduler lock release failed", "task", task.Name, "error", err)
+			logger.Warn(ctx, "scheduler lock release failed", "task", task.Name, "error", err)
 		}
 	}()
 

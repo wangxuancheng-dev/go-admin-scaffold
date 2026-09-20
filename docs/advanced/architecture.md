@@ -6,14 +6,14 @@
 
 1. `config.LoadConfig` + `Validate`
 2. logger / `SetupDatabase` → `*gorm.DB` / `SetupRedis` → `*redis.Client` / `SetupCache(cfg, rdb)` / `i18n.Init`
-3. `bootstrap.NewContainer(cfg, db, rdb)` — **只组装一次**
-4. `routes.SetupRoutes(engine, container)` — Handler / 中间件构造注入（含 `middleware.I18n(i18n.Instance())`）
+3. `bootstrap.NewContainerWithCache` — **只组装一次**（含 `Cache` / `Realtime` / `Logger`）
+4. `routes.SetupRoutes(engine, container)` — Handler / 中间件构造注入（`JWT(..., c.Logger)`、`middleware.I18n(i18n.Instance())`）
 
 ```text
-SetupDB/Redis → NewContainer → AdminAPI / JWT / RBAC / OpLog / Upload / Health
+SetupDB/Redis/Cache → NewContainer → AdminAPI / JWT(Logger) / RBAC / OpLog / Upload / Health
 ```
 
-HTTP 路径一律构造注入，不按请求 `New` Service。Handler 依赖 `UserServiceAPI` / `RoleServiceAPI` / `MenuServiceAPI` 等接口。
+HTTP 路径一律构造注入，不按请求 `New` Service。Handler 依赖 `UserServiceAPI` / `RoleServiceAPI` / `MenuServiceAPI` 等接口；JWT / Recovery 依赖 `logger.ContextLogger`。
 
 ## 分层
 

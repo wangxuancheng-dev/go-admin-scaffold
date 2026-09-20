@@ -39,7 +39,7 @@ func (w *responseWriter) WriteHeader(statusCode int) {
 func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 	cfg := c.Config
 	api := adminv1.NewAdminAPI(c)
-	jwt := middleware.JWT(c.Auth)
+	jwt := middleware.JWT(c.Auth, c.Logger)
 	opLog := middleware.OperationLog(c.Log)
 	rbac := func(perm string) gin.HandlerFunc { return middleware.RBAC(c.RBAC, perm) }
 

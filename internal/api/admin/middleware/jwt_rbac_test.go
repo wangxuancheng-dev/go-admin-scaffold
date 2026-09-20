@@ -12,6 +12,7 @@ import (
 	"go-admin-scaffold/internal/core/models"
 	"go-admin-scaffold/internal/core/services"
 	"go-admin-scaffold/internal/core/types"
+	"go-admin-scaffold/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -73,7 +74,7 @@ func TestJWT_acceptsValidBearer(t *testing.T) {
 	require.NoError(t, err)
 
 	r := gin.New()
-	r.GET("/p", middleware.JWT(auth), func(c *gin.Context) {
+	r.GET("/p", middleware.JWT(auth, logger.Nop()), func(c *gin.Context) {
 		u, _ := c.Get("user")
 		c.JSON(http.StatusOK, gin.H{"id": u.(*models.User).ID})
 	})
@@ -91,7 +92,7 @@ func TestJWT_rejectsMissingHeader(t *testing.T) {
 	cfg := &config.Config{JWT: config.JWTConfig{Secret: "0123456789abcdef0123456789abcdef", ExpireTime: int(time.Hour.Seconds())}}
 	auth := services.NewAuthService(&jwtUserRepo{}, nil, cfg)
 	r := gin.New()
-	r.GET("/p", middleware.JWT(auth), func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.GET("/p", middleware.JWT(auth, logger.Nop()), func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/p", nil)
