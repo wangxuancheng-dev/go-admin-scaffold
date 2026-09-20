@@ -44,7 +44,7 @@ go run ./cmd/tools/main.go seed run
 go run ./cmd/server/main.go
 ```
 
-可选：队列消费（与内置 `QueueService` 二选一，避免重复消费同一队列）：
+需要异步任务时另起消费者：
 
 ```bash
 go run ./cmd/worker/main.go

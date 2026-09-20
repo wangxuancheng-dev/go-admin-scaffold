@@ -73,7 +73,7 @@ func (c *MakeCommand) Handle(ctx context.Context) error {
 	tmpl := template.Must(template.New("command").Parse(commandTemplate))
 	err = tmpl.Execute(file, map[string]interface{}{
 		"Name":      cmdName,
-		"ClassName": strings.Title(cmdName) + "Command",
+		"ClassName": exportName(cmdName) + "Command",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to generate command file: %v", err)
@@ -81,6 +81,13 @@ func (c *MakeCommand) Handle(ctx context.Context) error {
 
 	c.Success("Command created successfully: %s", fileName)
 	return nil
+}
+
+func exportName(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
 }
 
 const commandTemplate = `package commands

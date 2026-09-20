@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -28,6 +29,7 @@ type Config struct {
 	Storage    StorageConfig    `mapstructure:"storage"`
 	Metrics    MetricsConfig    `mapstructure:"metrics"`
 	Scheduler  SchedulerConfig  `mapstructure:"scheduler"`
+	Realtime   RealtimeConfig   `mapstructure:"realtime"`
 	SuperAdmin SuperAdminConfig `mapstructure:"super_admin"`
 	// SuperAdminIDs parsed once at load (from super_admin.user_ids). Not loaded from YAML keys.
 	SuperAdminIDs []uint `yaml:"-" mapstructure:"-"`
@@ -44,8 +46,17 @@ type MetricsConfig struct {
 
 // SchedulerConfig controls whether the HTTP server embeds the cron kernel.
 type SchedulerConfig struct {
-	// RunInServer defaults to true when omitted. Set false and run cmd/scheduler separately in production.
+	// RunInServer: omitted → true in non-production, false in production (ApplyEnvDefaults).
 	RunInServer *bool `mapstructure:"run_in_server"`
+}
+
+// RealtimeConfig controls WebSocket / SSE connect auth.
+type RealtimeConfig struct {
+	// AllowQueryToken: omitted → true in non-production, false in production.
+	// When false, JWT must not be passed as ?token= (use Bearer, Sec-WebSocket-Protocol, or ticket).
+	AllowQueryToken *bool `mapstructure:"allow_query_token"`
+	// TicketTTLSeconds is the lifetime of one-time connect tickets (default 60).
+	TicketTTLSeconds int `mapstructure:"ticket_ttl_seconds"`
 }
 
 // ServerConfig holds server configuration
@@ -322,6 +333,12 @@ func populateConfigFromViper(v *viper.Viper) (*Config, error) {
 		config.Scheduler.RunInServer = &runInServer
 	}
 
+	if v.IsSet("realtime.allow_query_token") {
+		allow := v.GetBool("realtime.allow_query_token")
+		config.Realtime.AllowQueryToken = &allow
+	}
+	config.Realtime.TicketTTLSeconds = v.GetInt("realtime.ticket_ttl_seconds")
+
 	config.Storage.Driver = getEnvOrDefault("STORAGE_DRIVER", v.GetString("storage.driver"))
 	config.Storage.Local.Path = getEnvOrDefault("STORAGE_LOCAL_PATH", v.GetString("storage.local.path"))
 	config.Storage.S3.Endpoint = getEnvOrDefault("STORAGE_S3_ENDPOINT", v.GetString("storage.s3.endpoint"))
@@ -331,11 +348,10 @@ func populateConfigFromViper(v *viper.Viper) (*Config, error) {
 	config.Storage.S3.Region = getEnvOrDefault("STORAGE_S3_REGION", v.GetString("storage.s3.region"))
 	config.Storage.S3.UseSSL = getEnvBoolOrDefault("STORAGE_S3_USE_SSL", v.GetBool("storage.s3.use_ssl"))
 
-	for _, idStr := range v.GetStringSlice("super_admin.user_ids") {
-		config.SuperAdmin.UserIDs = append(config.SuperAdmin.UserIDs, idStr)
-	}
+	config.SuperAdmin.UserIDs = append(config.SuperAdmin.UserIDs, v.GetStringSlice("super_admin.user_ids")...)
 	config.SuperAdminIDs = parseSuperAdminUints(config.SuperAdmin.UserIDs)
 
+	config.ApplyEnvDefaults()
 	return config, nil
 }
 
@@ -345,7 +361,7 @@ func parseSuperAdminUints(strs []string) []uint {
 		if id, err := strconv.ParseUint(idStr, 10, 32); err == nil {
 			out = append(out, uint(id))
 		} else {
-			logger.Sugared().Warnw("invalid super_admin user_id", "id", idStr, "error", err)
+			logger.Warn(context.Background(), "invalid super_admin user_id", "id", idStr, "error", err)
 		}
 	}
 	return out
@@ -399,6 +415,25 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// ApplyEnvDefaults fills omitted pointers based on app.env (safe production defaults).
+func (c *Config) ApplyEnvDefaults() {
+	if c == nil {
+		return
+	}
+	prod := strings.EqualFold(c.App.Env, "production")
+	if c.Scheduler.RunInServer == nil {
+		v := !prod
+		c.Scheduler.RunInServer = &v
+	}
+	if c.Realtime.AllowQueryToken == nil {
+		v := !prod
+		c.Realtime.AllowQueryToken = &v
+	}
+	if c.Realtime.TicketTTLSeconds <= 0 {
+		c.Realtime.TicketTTLSeconds = 60
+	}
+}
+
 // MetricsEnabled reports whether /metrics should be registered (default true).
 func (c *Config) MetricsEnabled() bool {
 	if c == nil || c.Metrics.Enabled == nil {
@@ -407,12 +442,37 @@ func (c *Config) MetricsEnabled() bool {
 	return *c.Metrics.Enabled
 }
 
-// SchedulerRunInServer reports whether the HTTP process should embed cron (default true).
+// SchedulerRunInServer reports whether the HTTP process should embed cron.
+// Default: true outside production; false in production (after ApplyEnvDefaults).
 func (c *Config) SchedulerRunInServer() bool {
-	if c == nil || c.Scheduler.RunInServer == nil {
+	if c == nil {
 		return true
 	}
+	if c.Scheduler.RunInServer == nil {
+		return !strings.EqualFold(c.App.Env, "production")
+	}
 	return *c.Scheduler.RunInServer
+}
+
+// RealtimeAllowQueryToken reports whether ?token= JWT is accepted for WS/SSE.
+// Default: true outside production; false in production (after ApplyEnvDefaults).
+func (c *Config) RealtimeAllowQueryToken() bool {
+	if c == nil {
+		return true
+	}
+	if c.Realtime.AllowQueryToken == nil {
+		return !strings.EqualFold(c.App.Env, "production")
+	}
+	return *c.Realtime.AllowQueryToken
+}
+
+// RealtimeTicketTTL returns the one-time ticket lifetime.
+func (c *Config) RealtimeTicketTTL() time.Duration {
+	sec := 60
+	if c != nil && c.Realtime.TicketTTLSeconds > 0 {
+		sec = c.Realtime.TicketTTLSeconds
+	}
+	return time.Duration(sec) * time.Second
 }
 
 // SuperAdminUintIDs returns super-admin user IDs parsed at load time.

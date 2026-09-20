@@ -68,8 +68,8 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 
 	r.Static("/static", "./static")
 
-	wsHandler := handlers.NewWSHandler(c.Auth, cfg.CORS.AllowOrigins)
-	sseHandler := handlers.NewSSEHandler(c.Auth)
+	wsHandler := handlers.NewWSHandler(c.Auth, c.Realtime, cfg.CORS.AllowOrigins, cfg.RealtimeAllowQueryToken())
+	sseHandler := handlers.NewSSEHandler(c.Auth, c.Realtime, cfg.RealtimeAllowQueryToken())
 	uploadHandler := corehandlers.NewUploadHandler(c.Storage)
 
 	adminV1 := r.Group("/api/admin/v1")
@@ -154,6 +154,8 @@ func SetupRoutes(r *gin.Engine, c *bootstrap.Container) error {
 			profile.GET("", wrapHandler(api.Profile.GetCurrentUser))
 			profile.PUT("", wrapHandler(api.Profile.UpdateCurrentUser))
 		}
+
+		adminV1Protected.POST("/realtime/ticket", wrapHandler(api.Realtime.IssueTicket))
 
 		upload := adminV1Protected.Group("/upload")
 		upload.Use(rbac("upload:create"))

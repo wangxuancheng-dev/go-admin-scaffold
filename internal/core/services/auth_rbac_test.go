@@ -137,6 +137,80 @@ func TestAuthService_Login_inactive(t *testing.T) {
 	assert.ErrorIs(t, err, ErrUserInactive)
 }
 
+func TestAuthService_Login_successAndBadPassword(t *testing.T) {
+	hasher := NewAuthService(&stubUserRepo{}, nil, testAuthConfig("0123456789abcdef0123456789abcdef", nil))
+	hash, err := hasher.HashPassword("secret")
+	require.NoError(t, err)
+
+	repo := &stubUserRepo{user: &models.User{ID: 3, Username: "carol", Password: hash, Status: 1}}
+	logRepo := &stubLogRepo{}
+	svc := NewAuthService(repo, NewLogService(logRepo), testAuthConfig("0123456789abcdef0123456789abcdef", []uint{3}))
+
+	resp, err := svc.Login(context.Background(), &LoginRequest{
+		Username: "carol", Password: "secret", CaptchaID: "c", CaptchaCode: "x",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.AccessToken)
+	assert.Equal(t, "Bearer", resp.TokenType)
+
+	_, err = svc.Login(context.Background(), &LoginRequest{
+		Username: "carol", Password: "wrong", CaptchaID: "c", CaptchaCode: "x",
+	})
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
+
+	_, err = svc.Login(context.Background(), &LoginRequest{
+		Username: "missing", Password: "x", CaptchaID: "c", CaptchaCode: "x",
+	})
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
+}
+
+func TestAuthService_GetUserFromClaims_errors(t *testing.T) {
+	svc := NewAuthService(&stubUserRepo{}, nil, testAuthConfig("0123456789abcdef0123456789abcdef", nil))
+	_, err := svc.GetUserFromClaims(context.Background(), jwt.MapClaims{"username": "x"})
+	require.Error(t, err)
+
+	_, err = svc.GetUserFromClaims(context.Background(), jwt.MapClaims{"user_id": "not-a-number"})
+	require.Error(t, err)
+}
+
+func TestAuthService_Logout_withoutLogService(t *testing.T) {
+	repo := &stubUserRepo{user: &models.User{ID: 2, Username: "e", Status: 1}}
+	svc := NewAuthService(repo, nil, testAuthConfig("0123456789abcdef0123456789abcdef", nil))
+	require.NoError(t, svc.Logout(context.Background(), 2))
+}
+
+func TestAuthService_IsSuperAdmin_nilConfig(t *testing.T) {
+	svc := &AuthService{}
+	assert.False(t, svc.IsSuperAdmin(1))
+}
+
+func TestAuthService_RefreshToken_Logout_GetUserByID(t *testing.T) {
+	hash, err := NewAuthService(&stubUserRepo{}, nil, testAuthConfig("0123456789abcdef0123456789abcdef", nil)).HashPassword("pw")
+	require.NoError(t, err)
+
+	repo := &stubUserRepo{user: &models.User{ID: 5, Username: "dave", Password: hash, Status: 1}}
+	logRepo := &stubLogRepo{}
+	cfg := testAuthConfig("0123456789abcdef0123456789abcdef", []uint{5})
+	svc := NewAuthService(repo, NewLogService(logRepo), cfg)
+
+	token, err := svc.RefreshToken(context.Background(), 5)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	inactive := &stubUserRepo{user: &models.User{ID: 6, Username: "off", Password: hash, Status: 0}}
+	svcInactive := NewAuthService(inactive, nil, cfg)
+	_, err = svcInactive.RefreshToken(context.Background(), 6)
+	assert.ErrorIs(t, err, ErrUserInactive)
+
+	require.NoError(t, svc.Logout(context.Background(), 5))
+	require.NotEmpty(t, logRepo.logins)
+
+	user, err := svc.GetUserByID(context.Background(), 5)
+	require.NoError(t, err)
+	assert.True(t, user.IsSuperAdmin)
+	assert.NotNil(t, svc.GetConfig())
+}
+
 func TestRBACService_CheckPermission_superAdmin(t *testing.T) {
 	auth := NewAuthService(&stubUserRepo{}, nil, testAuthConfig("0123456789abcdef0123456789abcdef", []uint{42}))
 	rbac := NewRBACService(nil, auth, nil)

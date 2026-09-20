@@ -1,10 +1,12 @@
 package sse
 
 import (
+	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
+
+	"go-admin-scaffold/pkg/logger"
 )
 
 // EventType defines the type of SSE event
@@ -20,8 +22,8 @@ type Event struct {
 	Type    string      `json:"type"`
 	Data    interface{} `json:"data"`
 	Time    time.Time   `json:"time"`
-	UserID  string      `json:"user_id,omitempty"`  // 目标用户ID，为空表示广播
-	GroupID string      `json:"group_id,omitempty"` // 目标组ID，为空表示非组消息
+	UserID  string      `json:"user_id,omitempty"`  // target user; empty = broadcast
+	GroupID string      `json:"group_id,omitempty"` // target group; empty = not group-scoped
 }
 
 // Client represents an SSE client connection
@@ -48,24 +50,24 @@ func NewManager() *Manager {
 		groups:     make(map[string]map[string]bool),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
-		events:     make(chan *Event, 100), // 缓冲通道，避免阻塞
+		events:     make(chan *Event, 100),
 	}
 }
 
 // Start starts the SSE manager
 func (m *Manager) Start() {
+	ctx := context.Background()
 	for {
 		select {
 		case client := <-m.register:
 			m.mu.Lock()
 			m.clients[client.ID] = client
-			log.Printf("SSE client %s registered", client.ID)
 			m.mu.Unlock()
+			logger.Debug(ctx, "sse client registered", "client_id", client.ID)
 
 		case client := <-m.unregister:
 			m.mu.Lock()
 			if _, ok := m.clients[client.ID]; ok {
-				// 从所有组中移除客户端
 				for groupID := range client.Groups {
 					if group, exists := m.groups[groupID]; exists {
 						delete(group, client.ID)
@@ -76,7 +78,7 @@ func (m *Manager) Start() {
 				}
 				delete(m.clients, client.ID)
 				close(client.Messages)
-				log.Printf("SSE client %s unregistered", client.ID)
+				logger.Debug(ctx, "sse client unregistered", "client_id", client.ID)
 			}
 			m.mu.Unlock()
 
@@ -86,49 +88,39 @@ func (m *Manager) Start() {
 	}
 }
 
+func (m *Manager) trySend(client *Client, event *Event) {
+	select {
+	case client.Messages <- event:
+	default:
+		logger.Warn(context.Background(), "sse send channel full", "client_id", client.ID)
+	}
+}
+
 // handleEvent processes and distributes events to relevant clients
 func (m *Manager) handleEvent(event *Event) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// 如果指定了用户ID，只发送给该用户
 	if event.UserID != "" {
 		if client, ok := m.clients[event.UserID]; ok {
-			select {
-			case client.Messages <- event:
-				log.Printf("Event sent to user %s", event.UserID)
-			default:
-				log.Printf("Failed to send event to user %s: channel full", event.UserID)
-			}
+			m.trySend(client, event)
 		}
 		return
 	}
 
-	// 如果指定了组ID，发送给组内所有成员
 	if event.GroupID != "" {
 		if group, ok := m.groups[event.GroupID]; ok {
 			for userID := range group {
 				if client, ok := m.clients[userID]; ok {
-					select {
-					case client.Messages <- event:
-						log.Printf("Event sent to group member %s", userID)
-					default:
-						log.Printf("Failed to send event to group member %s: channel full", userID)
-					}
+					m.trySend(client, event)
 				}
 			}
 		}
 		return
 	}
 
-	// 如果既没有指定用户也没有指定组，广播给所有客户端
 	for _, client := range m.clients {
-		select {
-		case client.Messages <- event:
-			log.Printf("Event broadcasted to client %s", client.ID)
-		default:
-			log.Printf("Failed to broadcast event to client %s: channel full", client.ID)
-		}
+		m.trySend(client, event)
 	}
 }
 
@@ -162,7 +154,6 @@ func (m *Manager) JoinGroup(groupID, userID string) {
 		client.Groups[groupID] = true
 	}
 
-	// 发送加入通知
 	m.events <- &Event{
 		ID:      fmt.Sprintf("join_%s_%d", groupID, time.Now().UnixNano()),
 		Type:    EventTypeNotification,
@@ -188,7 +179,6 @@ func (m *Manager) LeaveGroup(groupID, userID string) {
 		delete(client.Groups, groupID)
 	}
 
-	// 发送离开通知
 	m.events <- &Event{
 		ID:      fmt.Sprintf("leave_%s_%d", groupID, time.Now().UnixNano()),
 		Type:    EventTypeNotification,

@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"time"
 
 	"go-admin-scaffold/internal/config"
 	"go-admin-scaffold/internal/core/models"
@@ -68,12 +69,12 @@ func (r *UserRepository) ListWithRoles(ctx context.Context, pagination *models.P
 	return users, nil
 }
 
-// UpdateLastLogin updates the user's last login timestamp
+// UpdateLastLogin updates the user's last login timestamp (portable across MySQL/Postgres/SQLite).
 func (r *UserRepository) UpdateLastLogin(ctx context.Context, userID uint) error {
 	return r.db.WithContext(ctx).
 		Model(&models.User{}).
 		Where("id = ?", userID).
-		UpdateColumn("last_login_at", gorm.Expr("NOW()")).
+		UpdateColumn("last_login_at", time.Now()).
 		Error
 }
 

@@ -186,10 +186,13 @@ func init() {
 }
 
 func toStructName(name string) string {
-	// Convert snake_case to PascalCase
+	// Convert snake_case to PascalCase (ASCII identifiers only).
 	words := strings.Split(name, "_")
 	for i, word := range words {
-		words[i] = strings.Title(strings.ToLower(word))
+		if word == "" {
+			continue
+		}
+		words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
 	}
 	return strings.Join(words, "")
 }

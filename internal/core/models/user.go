@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -15,6 +17,7 @@ type User struct {
 	Avatar       string         `json:"avatar" gorm:"size:255"`
 	Status       int            `json:"status" gorm:"default:1"`
 	IsSuperAdmin bool           `json:"is_super_admin" gorm:"-"` // Virtual field, not stored in database
+	LastLoginAt  *time.Time     `json:"last_login_at,omitempty" gorm:"type:timestamp"`
 	Roles        []Role         `json:"roles" gorm:"many2many:user_roles"`
 	CreatedAt    CustomTime     `json:"created_at" gorm:"type:timestamp"`
 	UpdatedAt    CustomTime     `json:"updated_at" gorm:"type:timestamp"`

@@ -7,6 +7,7 @@ import (
 	"go-admin-scaffold/internal/core/repositories"
 	"go-admin-scaffold/internal/core/services"
 	"go-admin-scaffold/internal/core/storage"
+	"go-admin-scaffold/pkg/cache"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -17,20 +18,27 @@ type Container struct {
 	Config *config.Config
 	DB     *gorm.DB
 	Redis  *redis.Client
+	Cache  cache.Cache
 
-	Log  *services.LogService
-	User *services.UserService
-	Auth *services.AuthService
-	RBAC *services.RBACService
-	Role *services.RoleService
-	Todo *services.TodoService
-	Menu *services.MenuService
+	Log      *services.LogService
+	User     *services.UserService
+	Auth     *services.AuthService
+	RBAC     *services.RBACService
+	Role     *services.RoleService
+	Todo     *services.TodoService
+	Menu     *services.MenuService
+	Realtime *services.RealtimeTicketService
 
 	Storage storage.Storage
 }
 
 // NewContainer wires repositories and services once from explicit dependencies.
 func NewContainer(cfg *config.Config, db *gorm.DB, rdb *redis.Client) (*Container, error) {
+	return NewContainerWithCache(cfg, db, rdb, nil)
+}
+
+// NewContainerWithCache allows injecting a Cache built by SetupCache.
+func NewContainerWithCache(cfg *config.Config, db *gorm.DB, rdb *redis.Client, cch cache.Cache) (*Container, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -53,6 +61,7 @@ func NewContainer(cfg *config.Config, db *gorm.DB, rdb *redis.Client) (*Containe
 	roleSvc := services.NewRoleService(roleRepo, rbacSvc)
 	todoSvc := services.NewTodoService(todoRepo)
 	menuSvc := services.NewMenuService(menuRepo, userRepo, rbacSvc)
+	realtimeSvc := services.NewRealtimeTicketService(rdb, cfg.RealtimeTicketTTL())
 
 	storageCfg := &storage.Config{
 		Driver:    cfg.Storage.Driver,
@@ -72,16 +81,18 @@ func NewContainer(cfg *config.Config, db *gorm.DB, rdb *redis.Client) (*Containe
 	}
 
 	return &Container{
-		Config:  cfg,
-		DB:      db,
-		Redis:   rdb,
-		Log:     logSvc,
-		User:    userSvc,
-		Auth:    authSvc,
-		RBAC:    rbacSvc,
-		Role:    roleSvc,
-		Todo:    todoSvc,
-		Menu:    menuSvc,
-		Storage: store,
+		Config:   cfg,
+		DB:       db,
+		Redis:    rdb,
+		Cache:    cch,
+		Log:      logSvc,
+		User:     userSvc,
+		Auth:     authSvc,
+		RBAC:     rbacSvc,
+		Role:     roleSvc,
+		Todo:     todoSvc,
+		Menu:     menuSvc,
+		Realtime: realtimeSvc,
+		Storage:  store,
 	}, nil
 }

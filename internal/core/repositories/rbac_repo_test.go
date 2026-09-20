@@ -14,7 +14,7 @@ import (
 
 func setupRBACDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:rbac_mem?mode=memory&cache=private"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&models.User{},
@@ -51,4 +51,12 @@ func TestRBACRepository_permissionQueries(t *testing.T) {
 	active, err := repo.ListActivePermissions(ctx)
 	require.NoError(t, err)
 	require.Contains(t, active, "user:view")
+
+	roles, err := repo.ListUserRolesWithMenus(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, roles, 1)
+
+	visible, err := repo.ListVisibleMenus(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, visible)
 }

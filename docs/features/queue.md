@@ -12,7 +12,7 @@
 
 - `driver` 为 `redis` 或 `asynq` 时均走 Asynq 实现
 - 多队列与权重（`queue.queues` 的 `priority` → Asynq 队列权重）
-- 并发度为各队列 `processes` 之和（`QueueService.Start` / `cmd/worker`）
+- 并发度为各队列 `processes` 之和（由 **`cmd/worker`** 启动时汇总）
 - 任务级 `Timeout`、`MaxAttempts` 映射为 Asynq 的 `Timeout`、`MaxRetry`
 - **唯一任务**：`BaseJob.UniqueKey` + Asynq `Unique(ttl)`；重复入队返回 `queue.ErrDuplicateJob`（`asynq.ErrDuplicateTask`）
 - `Manager.Size` / `Clear` 通过 `asynq.Inspector`（统计为各状态任务总和）
@@ -21,12 +21,12 @@
 
 1. 在 `init` 中 **`queue.RegisterJobType("name", func() queue.JobInterface { return &YourJob{} })`**。
 2. **`Manager.Push` / `Later`** 会为已注册的具体类型自动填入 **`BaseJob.JobType`**（与 Asynq 任务类型字符串一致）；也可手动设置 `JobType`。
-3. 消费端必须在同一进程注册 **Asynq 处理器**：**`jobs.RegisterAsynqHandlers(mux)`**（见 `internal/core/jobs/asynq_handlers.go`）。业务侧需 **`import _ "go-admin-scaffold/internal/core/jobs"`** 或显式 import 含 `RegisterJobType` 的包，保证类型注册与 handler 一致。
+3. 消费端必须在同一进程注册 **Asynq 处理器**：**`jobs.RegisterAsynqHandlers(mux)`**（见 `internal/core/jobs/asynq_handlers.go`，**`cmd/worker`** 已调用）。业务侧需 **`import _ "go-admin-scaffold/internal/core/jobs"`** 或显式 import 含 `RegisterJobType` 的包，保证类型注册与 handler 一致。
 4. 入队 payload 为 **整段任务 JSON**；Asynq 的 *task type* = `job_type` 字段。
 
 ### 与 `Pop` 的关系
 
-当前驱动 **不提供** 拉取式 `Pop` / `Delete` / `Release`（返回 `queue.ErrPullNotSupported`）。消费请使用 **`cmd/worker`** 或应用内 **`QueueService.Start()`** 启动的 Asynq Server。
+当前驱动 **不提供** 拉取式 `Pop` / `Delete` / `Release`（返回 `queue.ErrPullNotSupported`）。消费请使用 **`cmd/worker`**。
 
 项目内参考：`internal/core/jobs/register.go`、`jobs.JobTypeExample` 等。
 
@@ -124,15 +124,14 @@ queue:
 import (
     "context"
     "go-admin-scaffold/internal/core/jobs"
-    "go-admin-scaffold/internal/core/services"
+    "go-admin-scaffold/internal/core/queuesvc"
 )
 
 ctx := context.Background()
-svc, err := services.NewQueueService(cfg)
+svc, err := queuesvc.NewQueueService(cfg)
 if err != nil {
     return err
 }
-defer svc.Stop() // 若调用了 Start
 
 job := jobs.NewExampleJob("hello")
 if err := svc.Push(ctx, job); err != nil {
@@ -148,10 +147,11 @@ err := svc.Later(ctx, job, 5*time.Minute)
 
 ### 4. 启动消费者
 
-**二选一**（不要重复消费同一队列）：
+```bash
+go run ./cmd/worker
+```
 
-- **独立进程**：`go run ./cmd/worker`（或编译后的 `worker`），读取 `queue.queues` 与 Redis URL。
-- **与应用同进程**：`queueService.Start()`（内部 `asynq.Server.Run`）；退出前 `queueService.Stop()`。
+HTTP API（`cmd/server`）只负责入队，不消费。生产用独立 `worker` 进程（见下方 systemd 示例）。
 
 ## 命令行工具
 
@@ -159,19 +159,19 @@ err := svc.Later(ctx, job, 5*time.Minute)
 
 ### `cmd/queue`
 
+入队侧运维 CLI（列出 / 清空 / 查长度），**不**启动消费者。
+
 | 参数 | 说明 |
 |------|------|
 | `-config` | 配置文件路径，默认 `configs/config.yaml` |
-| `-start` | 在本进程启动 Asynq Server，Ctrl+C 时优雅退出 |
-| `-stop` | 调用 `QueueService.Stop()`；**每次运行均为新进程**，单独执行通常无正在运行的 Server，一般用于与 `-start` 同一次设计的扩展；独立 **`worker`** 请对进程发 **SIGINT/SIGTERM** |
 | `-clear -queue=<name>` | 清空指定 Asynq 队列（Inspector 批量删除各状态任务） |
 | `-list` | 列出配置中的队列名 |
-| `-status` | 用 `Manager.Size` 查任务数；**`Active workers` 仅在本次进程调用过 `-start` 且未退出时为非零** |
+| `-status` | 用 `Manager.Size` 查任务数 |
 
 ```bash
-go run ./cmd/queue -start
 go run ./cmd/queue -clear -queue=default
 go run ./cmd/queue -list
+go run ./cmd/queue -status
 ```
 
 ### `cmd/queue-status`
@@ -225,7 +225,7 @@ WantedBy=multi-user.target
 | 现象 | 检查 |
 |------|------|
 | 任务不入队 | Redis 是否可达、`QueueRedisConnectionURL` 是否正确 |
-| 任务不执行 | 是否启动 `worker` 或 `QueueService.Start()`；`job_type` 是否已 `RegisterAsynqHandlers` |
+| 任务不执行 | 是否启动 `cmd/worker`；`job_type` 是否已 `RegisterAsynqHandlers` |
 | 重复入队被拒 | 是否为 `ErrDuplicateJob`；Unique 窗口内 payload/类型是否相同 |
 | `Handle` 未跑到 | 是否 import 了注册 `RegisterJobType` 的包；JSON 是否含正确 `job_type` |
 

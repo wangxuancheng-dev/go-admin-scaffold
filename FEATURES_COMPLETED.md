@@ -21,24 +21,25 @@
 - [x] i18n locales / translations
 
 ### 实时与可观测
-- [x] WebSocket / SSE（Bearer / Sec-WebSocket-Protocol；query token 仅兼容；WS Origin 对齐 CORS）
+- [x] WebSocket（`coder/websocket`）/ SSE（结构化日志；Bearer / 子协议 / ticket；生产默认禁 `?token=`）
+- [x] `POST /realtime/ticket` 短时一次性连接票
 - [x] Trace ID
 - [x] `GET /metrics`（token 鉴权；status/method/latency）
 - [x] `GET /api/open/v1/public/live` · `/ready`
 
 ### 基础设施
-- [x] 组合根 DI：`bootstrap.NewContainer(cfg, db, rdb)`
-- [x] 构造注入 Handler / 中间件（i18n 实例注入，无请求内 GetInstance）
-- [x] Service → Repository 边界（User/Role/Menu/Todo 接口；Handler 依赖 *ServiceAPI）
+- [x] 组合根 DI：`NewContainerWithCache` + Cache / RealtimeTicket 注入
+- [x] 构造注入 Handler / 中间件（i18n 实例注入）
+- [x] Service → Repository 边界（User/Role/Menu/Todo *ServiceAPI）
 - [x] Redis 限流 fail-closed（`RateLimitRedis`）
-- [x] Asynq 队列 + worker / CLI
-- [x] cron 调度 + Redis 锁（可 `scheduler.run_in_server=false` + `cmd/scheduler`）
+- [x] Asynq 队列（`internal/core/queuesvc`）+ worker / CLI
+- [x] cron：生产默认不内嵌；`cmd/scheduler` 独立进程
 - [x] 迁移 / seeder / artisan / tools
-- [x] CLI：`database.WithContext` / `FromContext` + `Validate()`
+- [x] CLI：`database.WithContext` / `FromContext` + `Validate()` + `ApplyEnvDefaults`
 
 ### 测试与 CI / 文档
 - [x] 核心包单测 + sqlite / miniredis 集成级测
-- [x] GitHub Actions：vet、staticcheck、race、覆盖率门禁（infra≥65% 含 routes；services/repos≥20%）、Swagger drift、文档 sanity
+- [x] GitHub Actions：vet、staticcheck、race、infra≥63%、services/repos≥70%、Swagger drift、文档 sanity
 - [x] 架构 / 测试 / Realtime / Tracing 文档
 
 ## 核心结构
@@ -49,7 +50,7 @@ internal/
   bootstrap/   Container + SetupDB/Redis/Cache
   api/admin/   v1 handlers, middleware, ws/sse
   api/open/    health (live/ready)
-  core/        services, repositories, models, storage, metrics
+  core/        services, repositories, queuesvc, models, storage, metrics
   routes/      SetupRoutes(container)
 pkg/           database, redis, response, queue, console, …
 docs/          见 docs/README.md
@@ -61,5 +62,5 @@ docs/          见 docs/README.md
 
 ---
 
-**状态**: 可作二次开发底座  
+**状态**: 可作二次开发底座（生产路径已硬化）  
 **更新**: 2026-09

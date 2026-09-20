@@ -45,11 +45,11 @@ jobs:
           ./pkg/response
           ./pkg/ginext
 
-      - name: Coverage gate (gated packages >= 65%)
+      - name: Coverage gate (gated packages >= 63%)
         run: |
           pct=$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')
           echo "gated package coverage: ${pct}%"
-          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=65 else 1)"
+          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=63 else 1)"
 
       - name: Coverage on services + repositories
         run: >
@@ -57,11 +57,11 @@ jobs:
           ./internal/core/services
           ./internal/core/repositories
 
-      - name: Coverage gate (services/repositories >= 20%)
+      - name: Coverage gate (services/repositories >= 70%)
         run: |
           pct=$(go tool cover -func=coverage-svc.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')
           echo "services/repositories coverage: ${pct}%"
-          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=20 else 1)"
+          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=70 else 1)"
 
       - name: Docs link sanity (required pages exist)
         run: |

@@ -18,8 +18,8 @@ func SetupRedis(cfg *config.Config) (*goredis.Client, error) {
 	})
 }
 
-// SetupCache initializes the cache system with the process Redis client.
-func SetupCache(cfg *config.Config, rdb *goredis.Client) error {
+// SetupCache initializes the cache system with the process Redis client and returns it for DI.
+func SetupCache(cfg *config.Config, rdb *goredis.Client) (cache.Cache, error) {
 	return cache.Setup(&cache.Config{
 		Driver:  cfg.Cache.Driver,
 		Prefix:  cfg.Cache.Prefix,

@@ -106,9 +106,16 @@ metrics:
   # Required when app.env=production. Scrape with Authorization: Bearer <token> or X-Metrics-Token.
   token: ""
 
-# Cron: default embeds in cmd/server. For production split, set run_in_server=false and run cmd/scheduler.
+# Cron: omitted run_in_server → true in non-production, false in production.
+# For production split: keep false and run cmd/scheduler.
 scheduler:
   run_in_server: true
+
+# Realtime WS/SSE: omitted allow_query_token → true in non-production, false in production.
+# Prefer Bearer / Sec-WebSocket-Protocol / POST /realtime/ticket then ?ticket=.
+realtime:
+  allow_query_token: true
+  ticket_ttl_seconds: 60
 
 i18n:
   default_locale: "en"

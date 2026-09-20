@@ -115,6 +115,16 @@ func (s *AuthService) GetUserFromClaims(ctx context.Context, claims jwt.MapClaim
 	return user, nil
 }
 
+// GetUserByID loads an active identity for realtime ticket connects.
+func (s *AuthService) GetUserByID(ctx context.Context, userID uint) (*models.User, error) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	user.IsSuperAdmin = s.IsSuperAdmin(user.ID)
+	return user, nil
+}
+
 func (s *AuthService) Login(ctx context.Context, req *LoginRequest) (*TokenResponse, error) {
 	user, err := s.userRepo.FindByUsername(ctx, req.Username)
 	if err != nil {

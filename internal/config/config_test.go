@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"testing"
+	"time"
 
 	"go-admin-scaffold/internal/config"
 
@@ -59,6 +60,21 @@ func TestConfigValidate_rejectsCredentialsWithWildcard(t *testing.T) {
 	err := cfg.Validate()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "allow_credentials")
+}
+
+func TestConfig_productionDefaults(t *testing.T) {
+	cfg := &config.Config{App: config.AppConfig{Env: "production"}}
+	cfg.ApplyEnvDefaults()
+	require.False(t, cfg.SchedulerRunInServer())
+	require.False(t, cfg.RealtimeAllowQueryToken())
+	require.Equal(t, 60*time.Second, cfg.RealtimeTicketTTL())
+}
+
+func TestConfig_devDefaults(t *testing.T) {
+	cfg := &config.Config{App: config.AppConfig{Env: "development"}}
+	cfg.ApplyEnvDefaults()
+	require.True(t, cfg.SchedulerRunInServer())
+	require.True(t, cfg.RealtimeAllowQueryToken())
 }
 
 func TestConfig_SchedulerRunInServerDefault(t *testing.T) {

@@ -55,14 +55,15 @@ func InitializeApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := bootstrap.SetupCache(cfg, rdb); err != nil {
+	cch, err := bootstrap.SetupCache(cfg, rdb)
+	if err != nil {
 		return nil, err
 	}
 	if err := i18n.Init(&cfg.I18n); err != nil {
 		return nil, err
 	}
 
-	container, err := bootstrap.NewContainer(cfg, db, rdb)
+	container, err := bootstrap.NewContainerWithCache(cfg, db, rdb, cch)
 	if err != nil {
 		return nil, err
 	}

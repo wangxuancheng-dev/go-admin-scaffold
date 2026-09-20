@@ -28,7 +28,7 @@ func JWT(authSvc *services.AuthService) gin.HandlerFunc {
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			logger.Sugared().Warnw("invalid authorization header format")
+			logger.Warn(c.Request.Context(), "invalid authorization header format")
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -36,7 +36,7 @@ func JWT(authSvc *services.AuthService) gin.HandlerFunc {
 
 		claims, err := authSvc.ValidateToken(parts[1])
 		if err != nil {
-			logger.Sugared().Warnw("jwt validation failed", "error", err)
+			logger.Warn(c.Request.Context(), "jwt validation failed", "error", err)
 			response.UnauthorizedError(c)
 			c.Abort()
 			return
@@ -44,7 +44,7 @@ func JWT(authSvc *services.AuthService) gin.HandlerFunc {
 
 		user, err := authSvc.GetUserFromClaims(c.Request.Context(), claims)
 		if err != nil || user == nil {
-			logger.Sugared().Warnw("get user from jwt claims failed", "error", err)
+			logger.Warn(c.Request.Context(), "get user from jwt claims failed", "error", err)
 			response.UnauthorizedError(c)
 			c.Abort()
 			return

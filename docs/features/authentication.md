@@ -80,7 +80,7 @@ user := userVal.(*models.User)
 2. 定期轮换密钥
 3. 设置合理的令牌过期时间
 4. 生产使用 Redis 限流（`RateLimitRedis`，多实例共享）
-5. WebSocket / SSE 通过 query `token` 传 JWT；浏览器 Origin 受 `cors.allow_origins` 约束
+5. WebSocket / SSE 优先用 realtime ticket 或 Bearer / 子协议传凭据；生产默认禁止 query `token`。浏览器 Origin 受 `cors.allow_origins` 约束（WS 库为 `coder/websocket`）
 
 WebSocket / SSE 鉴权见 [realtime.md](realtime.md)。
 

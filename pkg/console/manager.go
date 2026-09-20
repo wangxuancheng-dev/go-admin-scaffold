@@ -6,6 +6,10 @@ import (
 	"os"
 )
 
+type ctxKey int
+
+const argsCtxKey ctxKey = 1
+
 // Manager manages console commands
 type Manager struct {
 	commands map[string]Command
@@ -51,7 +55,7 @@ func (m *Manager) RunFromArgsWithContext(base context.Context) error {
 		return fmt.Errorf("command not found: %s", cmdName)
 	}
 
-	ctx := context.WithValue(base, "args", args)
+	ctx := context.WithValue(base, argsCtxKey, args)
 	return cmd.Handle(ctx)
 }
 

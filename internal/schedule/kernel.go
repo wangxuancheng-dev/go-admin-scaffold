@@ -2,7 +2,8 @@ package schedule
 
 import (
 	"context"
-	"log"
+
+	"go-admin-scaffold/pkg/logger"
 )
 
 // Kernel manages the scheduler
@@ -19,18 +20,18 @@ func NewKernel(scheduler *Scheduler) *Kernel {
 
 // Schedule defines scheduled tasks (register with k.scheduler.Command(...).Cron("...").Register() etc.)
 func (k *Kernel) Schedule() {
-	log.Println("Scheduled tasks initialized (none registered by default)")
+	logger.Debug(context.Background(), "scheduled tasks initialized (none registered by default)")
 }
 
 // Start starts the scheduler
 func (k *Kernel) Start(ctx context.Context) error {
-	log.Println("Starting scheduler...")
+	logger.Info(ctx, "starting scheduler")
 	k.Schedule()
 	return k.scheduler.Start(ctx)
 }
 
 // Stop stops the scheduler
 func (k *Kernel) Stop() {
-	log.Println("Stopping scheduler...")
+	logger.Info(context.Background(), "stopping scheduler")
 	k.scheduler.Stop()
 }

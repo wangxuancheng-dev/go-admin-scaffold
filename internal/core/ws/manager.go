@@ -1,13 +1,15 @@
 package ws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"go-admin-scaffold/pkg/logger"
+
+	"github.com/coder/websocket"
 )
 
 // MessageType defines the type of WebSocket message
@@ -33,7 +35,6 @@ type Client struct {
 	Send    chan []byte
 	Manager *Manager
 	Groups  map[string]bool
-	mu      sync.Mutex
 }
 
 // Manager manages WebSocket connections and message broadcasting
@@ -59,61 +60,45 @@ func NewManager() *Manager {
 
 // Start starts the WebSocket manager
 func (m *Manager) Start() {
+	ctx := context.Background()
 	for {
 		select {
 		case client := <-m.Register:
 			m.mu.Lock()
 			m.Clients[client.ID] = client
 			m.mu.Unlock()
+			logger.Debug(ctx, "ws client registered", "client_id", client.ID)
 
 		case client := <-m.Unregister:
 			if _, ok := m.Clients[client.ID]; ok {
 				m.mu.Lock()
-				// Leave all groups before unregistering
 				for groupID := range client.Groups {
 					if group, exists := m.Groups[groupID]; exists {
-						// Remove client from group
 						delete(group, client.ID)
 
-						// If group is empty, delete it
 						if len(group) == 0 {
 							delete(m.Groups, groupID)
-							log.Printf("Group %s deleted as it's empty", groupID)
 						} else {
-							// Notify other group members
 							notifyMsg := &Message{
 								Type:      MessageTypeAnnouncement,
 								From:      client.ID,
 								Content:   fmt.Sprintf("用户 %s 离开了群组（断开连接）", client.ID),
 								Timestamp: time.Now().Unix(),
 							}
-
-							data, err := json.Marshal(notifyMsg)
-							if err == nil {
+							if data, err := json.Marshal(notifyMsg); err == nil {
 								for memberID := range group {
-									if member, ok := m.Clients[memberID]; ok {
-										select {
-										case member.Send <- data:
-											log.Printf("Disconnect notification sent to %s", memberID)
-										default:
-											log.Printf("Failed to send disconnect notification to %s", memberID)
-										}
-									}
+									m.trySendLocked(memberID, data)
 								}
 							}
 						}
 					}
 				}
 
-				// Clear client's groups
 				client.Groups = make(map[string]bool)
-
-				// Remove client from clients map and close send channel
 				delete(m.Clients, client.ID)
 				close(client.Send)
 				m.mu.Unlock()
-
-				log.Printf("Client %s unregistered and removed from all groups", client.ID)
+				logger.Debug(ctx, "ws client unregistered", "client_id", client.ID)
 			}
 
 		case message := <-m.Broadcast:
@@ -129,26 +114,31 @@ func (m *Manager) Start() {
 	}
 }
 
+func (m *Manager) trySendLocked(clientID string, data []byte) {
+	client, ok := m.Clients[clientID]
+	if !ok {
+		return
+	}
+	select {
+	case client.Send <- data:
+	default:
+		logger.Warn(context.Background(), "ws send channel full", "client_id", clientID)
+	}
+}
+
 func (m *Manager) handlePrivateMessage(message *Message) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Send to both sender and receiver
 	data, err := json.Marshal(message)
 	if err != nil {
+		logger.Error(context.Background(), "ws marshal private message failed", "error", err)
 		return
 	}
 
-	// Send to receiver
-	if client, ok := m.Clients[message.To]; ok {
-		client.Send <- data
-	}
-
-	// Send to sender if not the same as receiver
+	m.trySendLocked(message.To, data)
 	if message.From != message.To {
-		if client, ok := m.Clients[message.From]; ok {
-			client.Send <- data
-		}
+		m.trySendLocked(message.From, data)
 	}
 }
 
@@ -156,45 +146,35 @@ func (m *Manager) handleGroupMessage(message *Message) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if group, ok := m.Groups[message.To]; ok {
-		data, err := json.Marshal(message)
-		if err != nil {
-			log.Printf("Error marshaling group message: %v", err)
-			return
-		}
+	group, ok := m.Groups[message.To]
+	if !ok {
+		logger.Debug(context.Background(), "ws group not found", "group_id", message.To)
+		return
+	}
 
-		log.Printf("Broadcasting group message to group %s with %d members", message.To, len(group))
+	data, err := json.Marshal(message)
+	if err != nil {
+		logger.Error(context.Background(), "ws marshal group message failed", "error", err)
+		return
+	}
 
-		// Send to all members of the group, including the sender
-		for userID := range group {
-			if client, ok := m.Clients[userID]; ok {
-				log.Printf("Sending message to group member: %s", userID)
-				select {
-				case client.Send <- data:
-					log.Printf("Message sent to member %s successfully", userID)
-				default:
-					log.Printf("Failed to send message to member %s: send channel full", userID)
-				}
-			} else {
-				log.Printf("Member %s not found in clients map", userID)
-			}
-		}
-	} else {
-		log.Printf("Group %s not found", message.To)
+	for userID := range group {
+		m.trySendLocked(userID, data)
 	}
 }
 
 func (m *Manager) handleAnnouncement(message *Message) {
 	data, err := json.Marshal(message)
 	if err != nil {
+		logger.Error(context.Background(), "ws marshal announcement failed", "error", err)
 		return
 	}
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	for _, client := range m.Clients {
-		client.Send <- data
+	for id := range m.Clients {
+		m.trySendLocked(id, data)
 	}
 }
 
@@ -208,9 +188,6 @@ func (m *Manager) JoinGroup(groupID, clientID string) {
 	}
 	m.Groups[groupID][clientID] = true
 
-	log.Printf("Client %s joined group %s", clientID, groupID)
-
-	// Send a confirmation message to the group
 	confirmMsg := &Message{
 		Type:      MessageTypeAnnouncement,
 		From:      clientID,
@@ -220,20 +197,12 @@ func (m *Manager) JoinGroup(groupID, clientID string) {
 
 	data, err := json.Marshal(confirmMsg)
 	if err != nil {
-		log.Printf("Error marshaling join confirmation: %v", err)
+		logger.Error(context.Background(), "ws marshal join confirmation failed", "error", err)
 		return
 	}
 
-	// Send to all members of the group
 	for memberID := range m.Groups[groupID] {
-		if client, ok := m.Clients[memberID]; ok {
-			select {
-			case client.Send <- data:
-				log.Printf("Join confirmation sent to %s", memberID)
-			default:
-				log.Printf("Failed to send join confirmation to %s", memberID)
-			}
-		}
+		m.trySendLocked(memberID, data)
 	}
 }
 
@@ -242,144 +211,103 @@ func (m *Manager) LeaveGroup(groupID, clientID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if group, ok := m.Groups[groupID]; ok {
-		// 先检查用户是否在群组中
-		if !group[clientID] {
-			log.Printf("Client %s is not in group %s", clientID, groupID)
-			return
-		}
-
-		// 从群组中移除用户
-		delete(group, clientID)
-		log.Printf("Client %s left group %s", clientID, groupID)
-
-		// 如果群组为空，删除群组
-		if len(group) == 0 {
-			delete(m.Groups, groupID)
-			log.Printf("Group %s deleted as it's empty", groupID)
-		}
-
-		// 从客户端的群组列表中移除
-		if client, ok := m.Clients[clientID]; ok {
-			delete(client.Groups, groupID)
-		}
-
-		// 发送退出通知给群组中的所有成员
-		notifyMsg := &Message{
-			Type:      MessageTypeAnnouncement,
-			From:      clientID,
-			Content:   fmt.Sprintf("用户 %s 退出了群组", clientID),
-			Timestamp: time.Now().Unix(),
-		}
-
-		data, err := json.Marshal(notifyMsg)
-		if err != nil {
-			log.Printf("Error marshaling leave notification: %v", err)
-			return
-		}
-
-		// 发送给所有群组成员
-		for memberID := range group {
-			if client, ok := m.Clients[memberID]; ok {
-				select {
-				case client.Send <- data:
-					log.Printf("Leave notification sent to %s", memberID)
-				default:
-					log.Printf("Failed to send leave notification to %s", memberID)
-				}
-			}
-		}
-
-		// 发送给离开的成员
-		if client, ok := m.Clients[clientID]; ok {
-			select {
-			case client.Send <- data:
-				log.Printf("Leave notification sent to leaving member %s", clientID)
-			default:
-				log.Printf("Failed to send leave notification to leaving member %s", clientID)
-			}
-		}
-	} else {
-		log.Printf("Group %s not found", groupID)
+	group, ok := m.Groups[groupID]
+	if !ok {
+		return
 	}
+	if !group[clientID] {
+		return
+	}
+
+	delete(group, clientID)
+	if len(group) == 0 {
+		delete(m.Groups, groupID)
+	}
+	if client, ok := m.Clients[clientID]; ok {
+		delete(client.Groups, groupID)
+	}
+
+	notifyMsg := &Message{
+		Type:      MessageTypeAnnouncement,
+		From:      clientID,
+		Content:   fmt.Sprintf("用户 %s 退出了群组", clientID),
+		Timestamp: time.Now().Unix(),
+	}
+	data, err := json.Marshal(notifyMsg)
+	if err != nil {
+		logger.Error(context.Background(), "ws marshal leave notification failed", "error", err)
+		return
+	}
+
+	for memberID := range group {
+		m.trySendLocked(memberID, data)
+	}
+	m.trySendLocked(clientID, data)
 }
 
-// WritePump handles writing messages to the WebSocket connection
+// WritePump handles writing messages to the WebSocket connection.
 func (c *Client) WritePump() {
-	ticker := time.NewTicker(time.Second * 30)
+	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
-		c.Conn.Close()
+		_ = c.Conn.Close(websocket.StatusNormalClosure, "")
 	}()
 
 	for {
 		select {
 		case message, ok := <-c.Send:
 			if !ok {
-				log.Printf("Send channel closed for client %s", c.ID)
-				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.Conn.Close(websocket.StatusNormalClosure, "")
 				return
 			}
 
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := c.Conn.Write(ctx, websocket.MessageText, message)
+			cancel()
 			if err != nil {
-				log.Printf("Error getting writer for client %s: %v", c.ID, err)
+				logger.Warn(context.Background(), "ws write failed", "client_id", c.ID, "error", err)
 				return
 			}
-
-			if _, err := w.Write(message); err != nil {
-				log.Printf("Error writing message for client %s: %v", c.ID, err)
-				return
-			}
-
-			if err := w.Close(); err != nil {
-				log.Printf("Error closing writer for client %s: %v", c.ID, err)
-				return
-			}
-
-			log.Printf("Message successfully written to client %s", c.ID)
 
 		case <-ticker.C:
-			// Send ping to keep connection alive
-			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Printf("Error sending ping to client %s: %v", c.ID, err)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			err := c.Conn.Ping(ctx)
+			cancel()
+			if err != nil {
+				logger.Debug(context.Background(), "ws ping failed", "client_id", c.ID, "error", err)
 				return
 			}
 		}
 	}
 }
 
-// ReadPump handles reading messages from the WebSocket connection
+// ReadPump handles reading messages from the WebSocket connection.
 func (c *Client) ReadPump() {
 	defer func() {
-		log.Printf("Client %s disconnected", c.ID)
 		c.Manager.Unregister <- c
-		c.Conn.Close()
+		_ = c.Conn.Close(websocket.StatusNormalClosure, "")
 	}()
 
 	c.Conn.SetReadLimit(512)
-	c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	c.Conn.SetPongHandler(func(string) error {
-		c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
 
 	for {
-		_, message, err := c.Conn.ReadMessage()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		_, message, err := c.Conn.Read(ctx)
+		cancel()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Error reading message from client %s: %v", c.ID, err)
+			status := websocket.CloseStatus(err)
+			if status == -1 || (status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway) {
+				logger.Warn(context.Background(), "ws read failed", "client_id", c.ID, "error", err)
 			}
 			break
 		}
 
 		var msg Message
 		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("Error unmarshaling message from client %s: %v", c.ID, err)
+			logger.Warn(context.Background(), "ws invalid message json", "client_id", c.ID, "error", err)
 			continue
 		}
 
-		// Set sender and timestamp only if not set
 		if msg.From == "" {
 			msg.From = c.ID
 		}
@@ -387,18 +315,11 @@ func (c *Client) ReadPump() {
 			msg.Timestamp = time.Now().Unix()
 		}
 
-		// Add debug logging
-		data, _ := json.Marshal(msg)
-		log.Printf("Received message from client %s: %s", c.ID, string(data))
-
-		// Validate message type
 		if msg.Type < MessageTypePrivate || msg.Type > MessageTypeAnnouncement {
-			log.Printf("Invalid message type from client %s: %d", c.ID, msg.Type)
+			logger.Warn(context.Background(), "ws invalid message type", "client_id", c.ID, "type", msg.Type)
 			continue
 		}
 
-		// Broadcast the message
 		c.Manager.Broadcast <- &msg
-		log.Printf("Message from client %s broadcasted", c.ID)
 	}
 }

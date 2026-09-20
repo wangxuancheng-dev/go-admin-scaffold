@@ -62,4 +62,26 @@ func TestLogService_recordAndList(t *testing.T) {
 	hist, err := svc.GetUserLoginHistory(ctx, 1, 10)
 	require.NoError(t, err)
 	require.Len(t, hist, 1)
+
+	opHist, err := svc.GetUserOperationHistory(ctx, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, opHist, 1)
+
+	pagedLogins, total, err := svc.GetLoginLogs(ctx, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, pagedLogins, 1)
+	require.Equal(t, int64(1), total)
+
+	pagedOps, opTotal, err := svc.GetOperationLogs(ctx, 1, 10)
+	require.NoError(t, err)
+	require.Len(t, pagedOps, 1)
+	require.Equal(t, int64(1), opTotal)
+
+	userLogins, err := svc.GetUserLoginLogs(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, userLogins, 1)
+
+	userOps, err := svc.GetUserOperationLogs(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, userOps, 1)
 }

@@ -108,6 +108,18 @@ func TestMenuService_createGetDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, routes)
 
+	roleIDs := []uint{1}
+	updated, err := svc.Update(ctx, created.ID, &UpdateMenuRequest{Title: "Dash", RoleIDs: roleIDs})
+	require.NoError(t, err)
+	require.Equal(t, "Dash", updated.Title)
+
+	visible, err := svc.GetVisibleMenuTree(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, visible)
+
+	require.NoError(t, svc.UpdateMenuRoles(ctx, created.ID, []uint{2}))
+	require.Equal(t, 3, inv.all)
+
 	require.NoError(t, svc.Delete(ctx, created.ID))
-	require.Equal(t, 2, inv.all)
+	require.Equal(t, 4, inv.all)
 }

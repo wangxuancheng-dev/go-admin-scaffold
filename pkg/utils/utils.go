@@ -139,9 +139,7 @@ func IsValidPhoneNumber(phone string) bool {
 	if s == "" {
 		return false
 	}
-	if strings.HasPrefix(s, "+") {
-		s = s[1:]
-	}
+	s = strings.TrimPrefix(s, "+")
 	phoneDigitsOnly := regexp.MustCompile(`^[1-9]\d+$`)
 	if !phoneDigitsOnly.MatchString(s) {
 		return false

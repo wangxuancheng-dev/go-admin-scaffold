@@ -3,39 +3,38 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"go-admin-scaffold/internal/core/services"
 	"go-admin-scaffold/internal/core/sse"
+	"go-admin-scaffold/pkg/logger"
 	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
 
-// SSEHandler handles Server-Sent Events.
-//
-// Auth (connect):
-//   - Prefer Authorization: Bearer <jwt>
-//   - Legacy: GET /sse?token=<jwt> (may leak via access logs)
-//
-// Auth (control):
-//   - POST /sse/* — Authorization Bearer; join/leave identity from JWT context
+// SSEHandler handles Server-Sent Events with the same connect auth as WebSocket.
 type SSEHandler struct {
-	manager *sse.Manager
-	auth    *services.AuthService
+	manager         *sse.Manager
+	auth            *services.AuthService
+	tickets         *services.RealtimeTicketService
+	allowQueryToken bool
 }
 
-func NewSSEHandler(auth *services.AuthService) *SSEHandler {
+func NewSSEHandler(auth *services.AuthService, tickets *services.RealtimeTicketService, allowQueryToken bool) *SSEHandler {
 	manager := sse.NewManager()
 	go manager.Start()
-	return &SSEHandler{manager: manager, auth: auth}
+	return &SSEHandler{manager: manager, auth: auth, tickets: tickets, allowQueryToken: allowQueryToken}
 }
 
 func (h *SSEHandler) HandleSSE(c *gin.Context) {
-	token, _ := extractRealtimeToken(c)
-	if token == "" {
-		response.ParamError(c, "token is required (Authorization Bearer or ?token=)")
+	token, ticket, _ := extractRealtimeToken(c, TokenExtractOptions{AllowQueryToken: h.allowQueryToken})
+	if token == "" && ticket == "" {
+		msg := "token is required (Authorization Bearer or ?ticket=)"
+		if h.allowQueryToken {
+			msg = "token is required (Authorization Bearer, ?ticket=, or ?token=)"
+		}
+		response.ParamError(c, msg)
 		return
 	}
 	if h.auth == nil {
@@ -43,30 +42,48 @@ func (h *SSEHandler) HandleSSE(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.auth.ValidateToken(token)
-	if err != nil {
-		response.UnauthorizedError(c)
-		return
+	var userIDStr string
+	if ticket != "" {
+		if h.tickets == nil {
+			response.UnauthorizedError(c)
+			return
+		}
+		uid, err := h.tickets.Consume(c.Request.Context(), ticket)
+		if err != nil {
+			response.UnauthorizedError(c)
+			return
+		}
+		user, err := h.auth.GetUserByID(c.Request.Context(), uid)
+		if err != nil || user == nil {
+			response.UnauthorizedError(c)
+			return
+		}
+		userIDStr = clientIDFromUser(user)
+	} else {
+		claims, err := h.auth.ValidateToken(token)
+		if err != nil {
+			response.UnauthorizedError(c)
+			return
+		}
+		user, err := h.auth.GetUserFromClaims(c.Request.Context(), claims)
+		if err != nil || user == nil {
+			response.UnauthorizedError(c)
+			return
+		}
+		userIDStr = clientIDFromUser(user)
 	}
-	user, err := h.auth.GetUserFromClaims(c.Request.Context(), claims)
-	if err != nil || user == nil {
-		response.UnauthorizedError(c)
-		return
-	}
-
-	userID := clientIDFromUser(user)
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("Transfer-Encoding", "chunked")
 
-	client := h.manager.Register(userID)
+	client := h.manager.Register(userIDStr)
 	defer h.manager.Unregister(client)
 
 	welcomeEvent := &sse.Event{
 		Type: sse.EventTypeNotification,
-		Data: fmt.Sprintf("Welcome %s!", userID),
+		Data: fmt.Sprintf("Welcome %s!", userIDStr),
 		Time: time.Now(),
 	}
 	h.manager.SendEvent(welcomeEvent)
@@ -75,12 +92,11 @@ func (h *SSEHandler) HandleSSE(c *gin.Context) {
 	for {
 		select {
 		case <-clientGone:
-			log.Printf("Client %s disconnected from SSE", userID)
 			return
 		case event := <-client.Messages:
 			data, err := json.Marshal(event)
 			if err != nil {
-				log.Printf("Error marshaling event: %v", err)
+				logger.Warn(c.Request.Context(), "sse marshal event failed", "error", err)
 				continue
 			}
 			_, _ = c.Writer.Write([]byte(fmt.Sprintf("id: %s\n", event.ID)))

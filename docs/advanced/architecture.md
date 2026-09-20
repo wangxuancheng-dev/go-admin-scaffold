@@ -31,8 +31,9 @@ HTTP 路径一律构造注入，不按请求 `New` Service。Handler 依赖 `Use
 
 ## 调度
 
-- 默认：`cmd/server` 内嵌 cron（`scheduler.run_in_server` 默认 true）
-- 生产拆分：配置 `scheduler.run_in_server: false`，另起 `cmd/scheduler`
+- 非 production：`cmd/server` 默认内嵌 cron（`ApplyEnvDefaults`）
+- production：默认 `scheduler.run_in_server=false`，另起 `cmd/scheduler`
+- Realtime：production 默认禁 `?token=` JWT；用 Bearer / 子协议 / `POST /realtime/ticket`
 
 ## CLI
 

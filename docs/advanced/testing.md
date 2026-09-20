@@ -22,7 +22,7 @@ go test -coverprofile=coverage.out -covermode=atomic \
   ./pkg/response \
   ./pkg/ginext
 
-# 业务层门禁包（CI ≥ 20%，逐步上调）
+# 业务层门禁包（CI ≥ 70%）
 go test -coverprofile=coverage-svc.out -covermode=atomic \
   ./internal/core/services \
   ./internal/core/repositories
@@ -35,8 +35,8 @@ CI（`.github/workflows/ci.yml`）还会：
 
 1. `go mod verify` + `go vet ./...` + `staticcheck`
 2. 全量 `go test -race ./...`
-3. 基础设施覆盖率门槛（≥ 65%，含 `routes`）
-4. services/repositories 覆盖率门槛（≥ 20%）
+3. 上表核心包覆盖率门槛（≥ 63%，含 `routes`）
+4. services/repositories 覆盖率门槛（≥ 70%）
 5. 文档完整性检查
 6. Swagger 产物漂移检查（`swag init` 后 `git diff --exit-code`）
 

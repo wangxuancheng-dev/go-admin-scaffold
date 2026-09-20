@@ -38,20 +38,20 @@ type Config struct {
 var defaultCache Cache
 
 // Setup initializes the cache system with an explicit Redis client when driver is redis.
-func Setup(cfg *Config, rdb *goredis.Client) error {
+// Returns the process Cache handle for composition-root injection (also sets Default).
+func Setup(cfg *Config, rdb *goredis.Client) (Cache, error) {
 	switch cfg.Driver {
 	case "redis":
 		if rdb == nil {
-			return fmt.Errorf("redis client is required for cache driver redis")
+			return nil, fmt.Errorf("redis client is required for cache driver redis")
 		}
 		defaultCache = &RedisCache{client: rdb, prefix: cfg.Prefix}
-		return nil
+		return defaultCache, nil
 	case "file", "":
-		// File cache via Manager.Store; keep Default optional.
 		defaultCache = nil
-		return nil
+		return nil, nil
 	default:
-		return fmt.Errorf("unsupported cache driver: %s", cfg.Driver)
+		return nil, fmt.Errorf("unsupported cache driver: %s", cfg.Driver)
 	}
 }
 
