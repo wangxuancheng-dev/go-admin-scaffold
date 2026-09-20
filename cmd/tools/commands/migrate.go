@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"app/internal/database/migrations"
-	"app/pkg/console"
-	"app/pkg/database"
+	"go-admin-scaffold/internal/database/migrations"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
 )
 
 type MigrateCommand struct {
@@ -40,7 +40,10 @@ func (c *MigrateCommand) Handle(ctx context.Context) error {
 		return fmt.Errorf("action required: run, rollback, reset, refresh, or status")
 	}
 
-	db := database.GetDB()
+	db, err := database.FromContext(ctx)
+	if err != nil {
+		return err
+	}
 	migrator := migrations.InitMigrations(db)
 
 	action := args[1]

@@ -1,6 +1,6 @@
 package jobs
 
-import "app/pkg/queue"
+import "go-admin-scaffold/pkg/queue"
 
 // 队列 job_type 常量（与 RegisterJobType 一致）
 const (

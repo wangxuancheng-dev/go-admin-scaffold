@@ -65,8 +65,10 @@ internal/
 │   ├── auth.go          # 认证相关 API (含验证码)
 │   ├── user.go          # 用户管理 API (含搜索)
 │   ├── role.go          # 角色管理 API
-│   ├── permission.go    # 权限管理 API
+│   ├── menu.go          # 菜单管理 API（权限码挂在菜单上）
 │   └── i18n.go          # 国际化 API
+├── bootstrap/
+│   └── container.go     # 组合根（启动时组装依赖）
 ├── core/
 │   ├── services/        # 业务逻辑层
 │   ├── repositories/    # 数据访问层

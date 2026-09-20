@@ -32,6 +32,14 @@ func (m *Manager) FindCommand(name string) Command {
 
 // RunFromArgs runs a command from command line arguments
 func (m *Manager) RunFromArgs() error {
+	return m.RunFromArgsWithContext(context.Background())
+}
+
+// RunFromArgsWithContext runs a command using base context (attach DB via database.WithContext).
+func (m *Manager) RunFromArgsWithContext(base context.Context) error {
+	if base == nil {
+		base = context.Background()
+	}
 	args := os.Args[1:]
 	if len(args) == 0 {
 		return m.showAvailableCommands()
@@ -43,8 +51,7 @@ func (m *Manager) RunFromArgs() error {
 		return fmt.Errorf("command not found: %s", cmdName)
 	}
 
-	// Create context with arguments
-	ctx := context.WithValue(context.Background(), "args", args)
+	ctx := context.WithValue(base, "args", args)
 	return cmd.Handle(ctx)
 }
 

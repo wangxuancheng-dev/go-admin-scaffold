@@ -1,7 +1,7 @@
 package seeders
 
 import (
-	"app/internal/database/seeder"
+	"go-admin-scaffold/internal/database/seeder"
 	"encoding/json"
 
 	"gorm.io/gorm"

@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"app/internal/config"
-	"app/internal/core/models"
-	"app/internal/core/types"
-	"app/pkg/logger"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/types"
+	"go-admin-scaffold/pkg/logger"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -43,22 +43,20 @@ type UserService struct {
 	permInv  PermissionCacheInvalidator
 }
 
-func NewUserService(userRepo UserRepository, logSvc LogServiceInterface, config *config.Config) *UserService {
+func NewUserService(
+	userRepo UserRepository,
+	logSvc LogServiceInterface,
+	config *config.Config,
+	authSvc AuthServiceInterface,
+	permInv PermissionCacheInvalidator,
+) *UserService {
 	return &UserService{
 		userRepo: userRepo,
 		logSvc:   logSvc,
 		config:   config,
+		authSvc:  authSvc,
+		permInv:  permInv,
 	}
-}
-
-// SetAuthService sets the auth service instance
-func (s *UserService) SetAuthService(authSvc AuthServiceInterface) {
-	s.authSvc = authSvc
-}
-
-// SetPermissionCacheInvalidator wires RBAC permission cache invalidation (optional).
-func (s *UserService) SetPermissionCacheInvalidator(p PermissionCacheInvalidator) {
-	s.permInv = p
 }
 
 func (s *UserService) invalidateUserPermissions(ctx context.Context, userID uint) {

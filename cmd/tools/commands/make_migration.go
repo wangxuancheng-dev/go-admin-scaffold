@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"app/pkg/console"
+	"go-admin-scaffold/pkg/console"
 )
 
 type MakeMigrationCommand struct {

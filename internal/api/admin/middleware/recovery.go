@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"app/pkg/logger"
-	"app/pkg/response"
+	"go-admin-scaffold/pkg/logger"
+	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

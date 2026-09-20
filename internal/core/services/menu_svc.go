@@ -7,7 +7,7 @@ import (
 	"log"
 	"sort"
 
-	"app/internal/core/models"
+	"go-admin-scaffold/internal/core/models"
 )
 
 var (
@@ -35,16 +35,12 @@ type MenuService struct {
 	permInv  PermissionCacheInvalidator
 }
 
-func NewMenuService(menuRepo MenuRepository, userRepo UserRepository) *MenuService {
+func NewMenuService(menuRepo MenuRepository, userRepo UserRepository, permInv PermissionCacheInvalidator) *MenuService {
 	return &MenuService{
 		menuRepo: menuRepo,
 		userRepo: userRepo,
+		permInv:  permInv,
 	}
-}
-
-// SetPermissionCacheInvalidator wires RBAC permission cache invalidation (optional).
-func (s *MenuService) SetPermissionCacheInvalidator(p PermissionCacheInvalidator) {
-	s.permInv = p
 }
 
 func (s *MenuService) invalidateAllPermissions(ctx context.Context) {

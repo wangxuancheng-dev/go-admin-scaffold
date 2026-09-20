@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"app/internal/config"
-	"app/internal/core/models"
-	"app/pkg/logger"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/pkg/logger"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"

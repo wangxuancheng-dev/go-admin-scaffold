@@ -1,7 +1,7 @@
 package v1
 
 import (
-	"app/pkg/response"
+	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )

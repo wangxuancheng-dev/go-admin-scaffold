@@ -14,7 +14,7 @@ var (
 
 // RegisterJobType 注册任务类型，供 Asynq 消费端按 JSON 字段 job_type 反序列化为具体类型并调用 Handle。
 // name 应稳定（如 "example"）；factory 每次返回新的零值指针，例如 func() JobInterface { return &ExampleJob{} }。
-// 通常在 init 中注册，且业务进程需 import 该包以执行 init（如 _ "app/internal/core/jobs"）。
+// 通常在 init 中注册，且业务进程需 import 该包以执行 init（如 _ "go-admin-scaffold/internal/core/jobs"）。
 func RegisterJobType(name string, factory func() JobInterface) {
 	if name == "" || factory == nil {
 		return

@@ -45,8 +45,8 @@
 │   ├── logger/           # 日志工具
 │   ├── queue/            # 队列工具
 │   ├── response/         # 响应工具
-│   ├── storage/          # 存储工具
-│   └── utils/            # 通用工具
+│   ├── utils/            # 通用工具
+│   └── validate/         # 校验工具
 ├── scripts/              # 脚本文件
 ├── static/               # 静态文件
 ├── storage/              # 存储目录
@@ -60,6 +60,8 @@
 ├── Makefile            # 构建脚本
 └── README.md           # 项目说明
 ```
+
+> 说明：文件存储实现位于 `internal/core/storage`（Local/S3），不再使用 `pkg/storage`。数据模型在 `internal/core/models`。
 
 ## 核心目录说明
 
@@ -215,12 +217,14 @@
 
 ## 扩展开发（路径以本仓库为准）
 
-1. **业务**：模型在 `internal/core/models`，仓储在 `internal/core/repositories`，服务在 `internal/core/services`，HTTP 在 `internal/api/admin/v1` 等，路由集中在 `internal/routes/router.go`。
-2. **中间件**：`internal/api/admin/middleware`（或 `internal/core/middleware`），在 `router.go` 中挂载。
-3. **命令**：实现放在 `internal/commands`，在 `cmd/server/main.go`（随服务跑的调度相关）或 `cmd/artisan/main.go` / `cmd/tools/main.go` 中注册。
-4. **可复用库**：放在 `pkg/`。
+1. **组合根**：`module go-admin-scaffold`；`SetupDatabase/SetupRedis` 返回句柄 → `NewContainer(cfg, db, rdb)`；Cache 注入 Redis client。
+2. **业务**：Repo（含 RBAC）+ Service 构造注入；HTTP 为 `admin/v1` 结构体 Handler。
+3. **中间件 / 可观测**：JWT/RBAC/OpLog 构造注入；`RateLimitRedis` fail-closed；`GET /metrics` + Trace。
+4. **CLI**：`database.WithContext` / `FromContext`；tools/artisan/scheduler 显式传 DB。
+5. **存储**：仅 `internal/core/storage`。
 
-通用编码习惯、调试方式见 [开发说明](../advanced/development.md)；测试见 [测试指南](../advanced/testing.md)。
+
+
 
 ## 相关文档
 

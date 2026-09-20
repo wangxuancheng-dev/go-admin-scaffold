@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"app/internal/database/seeder"
+	"go-admin-scaffold/internal/database/seeder"
 
 	"gorm.io/gorm"
 )

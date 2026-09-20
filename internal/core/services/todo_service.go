@@ -1,8 +1,8 @@
 package services
 
 import (
-	"app/internal/core/models"
-	"app/internal/core/repositories"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/repositories"
 	"context"
 )
 

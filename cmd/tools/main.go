@@ -1,36 +1,34 @@
 package main
 
 import (
+	"context"
 	"log"
 
-	"app/cmd/tools/commands"
-	"app/internal/bootstrap"
-	"app/internal/config"
-	"app/pkg/console"
+	"go-admin-scaffold/cmd/tools/commands"
+	"go-admin-scaffold/internal/bootstrap"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
 )
 
 func main() {
-	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Initialize database
-	if err := bootstrap.SetupDatabase(cfg); err != nil {
+	db, err := bootstrap.SetupDatabase(cfg)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Create command manager
 	manager := console.NewManager()
-
-	// Register database commands
 	manager.Register(commands.NewMigrateCommand())
 	manager.Register(commands.NewSeedCommand())
 	manager.Register(commands.NewMakeMigrationCommand())
 
-	// Run command from arguments
-	if err := manager.RunFromArgs(); err != nil {
+	ctx := database.WithContext(context.Background(), db)
+	if err := manager.RunFromArgsWithContext(ctx); err != nil {
 		log.Fatal(err)
 	}
 }

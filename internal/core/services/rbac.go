@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 
-	"app/internal/core/models"
-	"app/pkg/logger"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/pkg/logger"
 )
 
 const (
@@ -20,28 +19,29 @@ const (
 	rbacPermTTL       = 5 * time.Minute
 )
 
-// RBACService handles role-based access control
+// RBACPermissionStore is the data access needed by RBACService.
+type RBACPermissionStore interface {
+	ListActivePermissions(ctx context.Context) ([]string, error)
+	UserHasAdminRole(ctx context.Context, userID uint) (bool, error)
+	ListUserPermissions(ctx context.Context, userID uint) ([]string, error)
+	ListUserRolesWithMenus(ctx context.Context, userID uint) ([]models.Role, error)
+	ListVisibleMenus(ctx context.Context) ([]models.Menu, error)
+}
+
+// RBACService handles role-based access control via RBACPermissionStore + optional Redis cache.
 type RBACService struct {
-	db      *gorm.DB
+	store   RBACPermissionStore
 	authSvc AuthServiceInterface
 	rdb     *redis.Client
 }
 
-// NewRBACService creates a new RBAC service instance
-func NewRBACService(db *gorm.DB) *RBACService {
+// NewRBACService wires store, auth checker, and optional Redis cache in one shot.
+func NewRBACService(store RBACPermissionStore, authSvc AuthServiceInterface, rdb *redis.Client) *RBACService {
 	return &RBACService{
-		db: db,
+		store:   store,
+		authSvc: authSvc,
+		rdb:     rdb,
 	}
-}
-
-// SetAuthService sets the auth service instance
-func (s *RBACService) SetAuthService(authSvc AuthServiceInterface) {
-	s.authSvc = authSvc
-}
-
-// SetRedisClient sets the Redis client used for permission list caching (optional).
-func (s *RBACService) SetRedisClient(c *redis.Client) {
-	s.rdb = c
 }
 
 func userPermCacheKey(userID uint) string {
@@ -76,44 +76,17 @@ func (s *RBACService) InvalidateAllPermissions(ctx context.Context) {
 
 func (s *RBACService) computeUserPermissions(ctx context.Context, userID uint) ([]string, error) {
 	if s.authSvc != nil && s.authSvc.IsSuperAdmin(userID) {
-		var allPermissions []string
-		err := s.db.WithContext(ctx).Model(&models.Menu{}).
-			Where("status = 1 AND visible = 1 AND permission != ''").
-			Pluck("permission", &allPermissions).Error
-		return allPermissions, err
+		return s.store.ListActivePermissions(ctx)
 	}
 
-	var isAdmin int64
-	err := s.db.WithContext(ctx).Table("user_roles").
-		Joins("JOIN roles ON user_roles.role_id = roles.id").
-		Where("user_roles.user_id = ? AND roles.code = 'admin' AND roles.status = 1", userID).
-		Count(&isAdmin).Error
+	isAdmin, err := s.store.UserHasAdminRole(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-
-	if isAdmin > 0 {
-		var allPermissions []string
-		err := s.db.WithContext(ctx).Model(&models.Menu{}).
-			Where("status = 1 AND visible = 1 AND permission != ''").
-			Pluck("permission", &allPermissions).Error
-		return allPermissions, err
+	if isAdmin {
+		return s.store.ListActivePermissions(ctx)
 	}
-
-	var permissions []string
-	err = s.db.WithContext(ctx).Table("user_roles").
-		Select("DISTINCT menus.permission").
-		Joins("JOIN role_menus ON user_roles.role_id = role_menus.role_id").
-		Joins("JOIN menus ON role_menus.menu_id = menus.id").
-		Joins("JOIN roles ON user_roles.role_id = roles.id").
-		Where("user_roles.user_id = ? AND menus.status = 1 AND menus.visible = 1 AND menus.permission != '' AND roles.status = 1", userID).
-		Pluck("menus.permission", &permissions).Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return permissions, nil
+	return s.store.ListUserPermissions(ctx, userID)
 }
 
 // CheckPermission checks if a user has the specified permission
@@ -127,16 +100,11 @@ func (s *RBACService) CheckPermission(ctx context.Context, user interface{}, per
 		return true, nil
 	}
 
-	var count int64
-	err := s.db.WithContext(ctx).Table("user_roles").
-		Joins("JOIN roles ON user_roles.role_id = roles.id").
-		Where("user_roles.user_id = ? AND roles.code = 'admin' AND roles.status = 1", userModel.ID).
-		Count(&count).Error
+	isAdmin, err := s.store.UserHasAdminRole(ctx, userModel.ID)
 	if err != nil {
 		return false, err
 	}
-
-	if count > 0 {
+	if isAdmin {
 		return true, nil
 	}
 
@@ -179,48 +147,28 @@ func (s *RBACService) GetUserPermissions(ctx context.Context, userID uint) ([]st
 
 // GetUserRoles returns all roles for a user with their menus
 func (s *RBACService) GetUserRoles(ctx context.Context, userID uint) ([]models.Role, error) {
-	var roles []models.Role
-
 	isSuperAdmin := s.authSvc != nil && s.authSvc.IsSuperAdmin(userID)
-
-	var hasAdminRole bool
-	err := s.db.WithContext(ctx).Table("user_roles").
-		Joins("JOIN roles ON user_roles.role_id = roles.id").
-		Where("user_roles.user_id = ? AND roles.code = 'admin' AND roles.status = 1", userID).
-		Limit(1).Find(&roles).Error
+	hasAdminRole, err := s.store.UserHasAdminRole(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	hasAdminRole = len(roles) > 0
+
+	roles, err := s.store.ListUserRolesWithMenus(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 
 	if hasAdminRole || isSuperAdmin {
-		err = s.db.WithContext(ctx).
-			Preload("Menus", "status = 1 AND visible = 1").
-			Joins("JOIN user_roles ON roles.id = user_roles.role_id").
-			Where("user_roles.user_id = ? AND roles.status = 1", userID).
-			Find(&roles).Error
-
+		allMenus, err := s.store.ListVisibleMenus(ctx)
+		if err != nil {
+			return nil, err
+		}
 		for i := range roles {
 			if roles[i].Code == "admin" || isSuperAdmin {
-				var allMenus []models.Menu
-				if err := s.db.WithContext(ctx).Where("status = 1 AND visible = 1").Find(&allMenus).Error; err != nil {
-					return nil, err
-				}
 				roles[i].Menus = allMenus
 			}
 		}
-	} else {
-		err = s.db.WithContext(ctx).
-			Preload("Menus", "status = 1 AND visible = 1").
-			Joins("JOIN user_roles ON roles.id = user_roles.role_id").
-			Where("user_roles.user_id = ? AND roles.status = 1", userID).
-			Find(&roles).Error
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
 	return roles, nil
 }
 
@@ -229,24 +177,16 @@ func (s *RBACService) HasAnyPermission(ctx context.Context, userID uint, permiss
 	if len(permissions) == 0 {
 		return false, nil
 	}
-
 	if s.authSvc != nil && s.authSvc.IsSuperAdmin(userID) {
 		return true, nil
 	}
-
-	var count int64
-	err := s.db.WithContext(ctx).Table("user_roles").
-		Joins("JOIN roles ON user_roles.role_id = roles.id").
-		Where("user_roles.user_id = ? AND roles.code = 'admin' AND roles.status = 1", userID).
-		Count(&count).Error
+	isAdmin, err := s.store.UserHasAdminRole(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-
-	if count > 0 {
+	if isAdmin {
 		return true, nil
 	}
-
 	perms, err := s.GetUserPermissions(ctx, userID)
 	if err != nil {
 		return false, err

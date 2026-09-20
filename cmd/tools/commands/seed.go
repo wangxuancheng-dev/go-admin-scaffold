@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"app/internal/database/seeder"
-	"app/internal/database/seeders"
-	"app/pkg/console"
-	"app/pkg/database"
+	"go-admin-scaffold/internal/database/seeder"
+	"go-admin-scaffold/internal/database/seeders"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
 )
 
 type SeedCommand struct {
@@ -45,7 +45,10 @@ func (c *SeedCommand) Handle(ctx context.Context) error {
 		return fmt.Errorf("action required: run, reset, or status")
 	}
 
-	db := database.GetDB()
+	db, err := database.FromContext(ctx)
+	if err != nil {
+		return err
+	}
 	seederManager := seeder.NewSeederManager(db)
 	seeders.SetGlobalManager(seederManager)
 

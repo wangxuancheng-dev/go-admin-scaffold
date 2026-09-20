@@ -1,13 +1,15 @@
 package bootstrap
 
 import (
-	"app/internal/config"
-	"app/pkg/cache"
-	"app/pkg/redis"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/pkg/cache"
+	"go-admin-scaffold/pkg/redis"
+
+	goredis "github.com/redis/go-redis/v9"
 )
 
-// SetupRedis initializes the Redis connection
-func SetupRedis(cfg *config.Config) error {
+// SetupRedis initializes the Redis connection and returns the client for the composition root.
+func SetupRedis(cfg *config.Config) (*goredis.Client, error) {
 	return redis.Setup(&redis.Config{
 		Host:     cfg.Redis.Host,
 		Port:     cfg.Redis.Port,
@@ -16,11 +18,11 @@ func SetupRedis(cfg *config.Config) error {
 	})
 }
 
-// SetupCache initializes the cache system
-func SetupCache(cfg *config.Config) error {
+// SetupCache initializes the cache system with the process Redis client.
+func SetupCache(cfg *config.Config, rdb *goredis.Client) error {
 	return cache.Setup(&cache.Config{
 		Driver:  cfg.Cache.Driver,
 		Prefix:  cfg.Cache.Prefix,
 		Options: cfg.Cache.Options,
-	})
+	}, rdb)
 }

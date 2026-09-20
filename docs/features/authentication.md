@@ -58,7 +58,9 @@ func (h *Handler) GetUserInfo(c *gin.Context) {
 1. 使用 HTTPS 传输
 2. 定期轮换密钥
 3. 设置合理的令牌过期时间
-4. 实施登录失败次数限制
+4. 实施登录失败次数限制（生产使用 Redis 限流：`RateLimitRedis`，多实例共享）
+
+WebSocket / SSE 鉴权见 [realtime.md](realtime.md)。
 
 ## 常见问题
 

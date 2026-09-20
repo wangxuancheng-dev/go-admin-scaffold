@@ -9,16 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"app/cmd/server/setup"
-	_ "app/docs" // 导入 swagger 文档
-	"app/internal/commands"
-	"app/internal/config"
-	"app/internal/schedule"
-	"app/pkg/console"
-	"app/pkg/database"
-	"app/pkg/locker"
-	"app/pkg/logger"
-	"app/pkg/redis"
+	"go-admin-scaffold/cmd/server/setup"
+	_ "go-admin-scaffold/docs" // 导入 swagger 文档
+	"go-admin-scaffold/internal/commands"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/schedule"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
+	"go-admin-scaffold/pkg/locker"
+	"go-admin-scaffold/pkg/logger"
 )
 
 // @title Go Admin Scaffold API
@@ -39,8 +38,12 @@ func main() {
 		log.Fatalf("Failed to initialize app: %v", err)
 	}
 
-	// Scheduler uses the same Redis client as the app
-	redisLocker := locker.NewRedisLocker(redis.GetClient())
+	// Scheduler uses the same Redis client as the app container
+	rdb := app.Container().Redis
+	if rdb == nil {
+		log.Fatal("redis client is nil")
+	}
+	redisLocker := locker.NewRedisLocker(rdb)
 
 	manager := console.NewManager()
 	manager.Register(commands.NewMigrateCommand())
@@ -50,7 +53,7 @@ func main() {
 	scheduler := schedule.NewScheduler(manager, redisLocker)
 	kernel := schedule.NewKernel(scheduler)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(database.WithContext(context.Background(), app.Container().DB))
 	defer cancel()
 
 	go func() {
@@ -93,8 +96,10 @@ func main() {
 	log.Println("Shutting down scheduler...")
 	kernel.Stop()
 
-	if err := redis.Close(); err != nil {
-		log.Printf("Error closing Redis client: %v", err)
+	if c := app.Container(); c != nil && c.Redis != nil {
+		if err := c.Redis.Close(); err != nil {
+			log.Printf("Error closing Redis client: %v", err)
+		}
 	}
 
 	if err := database.Close(); err != nil {

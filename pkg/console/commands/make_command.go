@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	"app/pkg/console"
+	"go-admin-scaffold/pkg/console"
 )
 
 type MakeCommand struct {
@@ -88,7 +88,7 @@ const commandTemplate = `package commands
 import (
 	"context"
 
-	"app/pkg/console"
+	"go-admin-scaffold/pkg/console"
 )
 
 type {{.ClassName}} struct {

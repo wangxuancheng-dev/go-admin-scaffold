@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"app/pkg/i18n"
-	"app/pkg/logger"
+	"go-admin-scaffold/pkg/i18n"
+	"go-admin-scaffold/pkg/logger"
 
 	"github.com/spf13/viper"
 )
@@ -328,6 +328,12 @@ func (c *Config) Validate() error {
 	if c == nil {
 		return fmt.Errorf("config is nil")
 	}
+	if strings.TrimSpace(c.JWT.Secret) == "" {
+		return fmt.Errorf("jwt.secret is required")
+	}
+	if strings.TrimSpace(c.Server.Address) == "" {
+		return fmt.Errorf("server.address is required")
+	}
 	if strings.EqualFold(c.App.Env, "production") {
 		if len(c.JWT.Secret) < 32 {
 			return fmt.Errorf("production: jwt.secret must be at least 32 characters")
@@ -340,6 +346,11 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimSpace(c.Redis.Host) == "" {
 			return fmt.Errorf("production: redis.host is required")
+		}
+		if strings.EqualFold(c.Storage.Driver, "s3") {
+			if strings.TrimSpace(c.Storage.S3.Bucket) == "" || strings.TrimSpace(c.Storage.S3.AccessKeyID) == "" {
+				return fmt.Errorf("production: storage.s3.bucket and access_key_id are required when driver=s3")
+			}
 		}
 		for _, o := range c.CORS.AllowOrigins {
 			if strings.TrimSpace(o) == "*" {

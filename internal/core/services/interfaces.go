@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 
-	"app/internal/core/models"
-	"app/internal/core/types"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/types"
 
 	"gorm.io/gorm"
 )

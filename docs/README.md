@@ -17,6 +17,7 @@
 |------|------|
 | [认证](features/authentication.md) | JWT、登录等 |
 | [RBAC](features/rbac.md) | 角色与权限 |
+| [Realtime](features/realtime.md) | WebSocket / SSE 鉴权约定 |
 | [队列（Asynq）](features/queue.md) | 入队、`worker`、CLI、`queue-test` |
 | [定时任务](features/scheduling.md) | cron、多实例与 Redis 锁 |
 | [缓存](features/cache.md) | Redis / 文件缓存 |

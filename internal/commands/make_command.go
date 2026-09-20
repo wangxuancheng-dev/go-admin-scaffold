@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"app/pkg/console"
+	"go-admin-scaffold/pkg/console"
 )
 
 type MakeCommand struct {

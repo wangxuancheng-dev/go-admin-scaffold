@@ -3,7 +3,7 @@ package seeders
 import (
 	"fmt"
 
-	"app/internal/database/seeder"
+	"go-admin-scaffold/internal/database/seeder"
 )
 
 var globalManager *seeder.SeederManager

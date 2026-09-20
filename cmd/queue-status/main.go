@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
-	"app/internal/config"
-	"app/pkg/queue"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/pkg/queue"
 )
 
 var (

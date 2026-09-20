@@ -3,7 +3,7 @@ package seeders
 import (
 	"time"
 
-	"app/internal/database/seeder"
+	"go-admin-scaffold/internal/database/seeder"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"

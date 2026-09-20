@@ -21,8 +21,23 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
+      - name: Test (all packages)
         run: go test ./...
+
+      - name: Coverage on core packages
+        run: >
+          go test -coverprofile=coverage.out -covermode=atomic
+          ./internal/bootstrap
+          ./internal/core/metrics
+          ./internal/core/middleware
+          ./internal/api/admin/middleware
+          ./pkg/utils
+
+      - name: Coverage gate (core packages >= 40%)
+        run: |
+          pct=$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')
+          echo "core package coverage: ${pct}%"
+          python3 -c "import sys; p=float('${pct}'); sys.exit(0 if p>=40 else 1)"
 
       - name: Install swag
         run: go install github.com/swaggo/swag/cmd/swag@latest

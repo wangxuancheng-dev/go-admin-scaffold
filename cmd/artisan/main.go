@@ -1,26 +1,32 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
-	"app/internal/commands"
-	"app/internal/config"
-	"app/internal/schedule"
-	"app/pkg/console"
-	"app/pkg/locker"
+	"go-admin-scaffold/internal/bootstrap"
+	"go-admin-scaffold/internal/commands"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/schedule"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
+	"go-admin-scaffold/pkg/locker"
 
 	"github.com/redis/go-redis/v9"
 )
 
 func main() {
-	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Initialize Redis client
+	db, err := bootstrap.SetupDatabase(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
 		Password: cfg.Redis.Password,
@@ -28,26 +34,18 @@ func main() {
 	})
 	defer redisClient.Close()
 
-	// Create Redis locker
 	redisLocker := locker.NewRedisLocker(redisClient)
-
-	// Create command manager
 	manager := console.NewManager()
-
-	// Register built-in commands
 	manager.Register(commands.NewMakeCommand())
 	manager.Register(commands.NewMigrateCommand())
 	manager.Register(commands.NewSeedCommand())
 
-	// Create scheduler
 	scheduler := schedule.NewScheduler(manager, redisLocker)
 	kernel := schedule.NewKernel(scheduler)
-
-	// Register scheduler command
 	manager.Register(commands.NewScheduleRunCommand(kernel))
 
-	// Run command from arguments
-	if err := manager.RunFromArgs(); err != nil {
+	ctx := database.WithContext(context.Background(), db)
+	if err := manager.RunFromArgsWithContext(ctx); err != nil {
 		log.Fatal(err)
 	}
 }

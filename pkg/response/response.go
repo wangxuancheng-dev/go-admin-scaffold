@@ -3,7 +3,7 @@ package response
 import (
 	"net/http"
 
-	"app/pkg/utils"
+	"go-admin-scaffold/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )

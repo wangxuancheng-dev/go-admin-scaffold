@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"app/pkg/queue"
+	"go-admin-scaffold/pkg/queue"
 )
 
 // ExampleJob 示例任务

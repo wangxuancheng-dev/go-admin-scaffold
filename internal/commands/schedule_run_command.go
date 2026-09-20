@@ -6,8 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"app/internal/schedule"
-	"app/pkg/console"
+	"go-admin-scaffold/internal/schedule"
+	"go-admin-scaffold/pkg/console"
 )
 
 type ScheduleRunCommand struct {

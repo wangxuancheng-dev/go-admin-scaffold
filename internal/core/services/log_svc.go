@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"app/internal/core/models"
+	"go-admin-scaffold/internal/core/models"
 )
 
 type LogService struct {

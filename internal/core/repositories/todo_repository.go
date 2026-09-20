@@ -1,7 +1,7 @@
 package repositories
 
 import (
-	"app/internal/core/models"
+	"go-admin-scaffold/internal/core/models"
 	"context"
 
 	"gorm.io/gorm"

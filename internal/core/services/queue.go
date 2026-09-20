@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"app/internal/config"
-	"app/internal/core/jobs" // RegisterJobType (init) + RegisterAsynqHandlers
-	"app/pkg/logger"
-	"app/pkg/queue"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/core/jobs" // RegisterJobType (init) + RegisterAsynqHandlers
+	"go-admin-scaffold/pkg/logger"
+	"go-admin-scaffold/pkg/queue"
 
 	"github.com/hibiken/asynq"
 )

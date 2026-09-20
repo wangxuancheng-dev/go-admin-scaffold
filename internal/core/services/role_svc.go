@@ -1,15 +1,17 @@
 package services
 
 import (
-	"app/internal/core/models"
 	"context"
 	"errors"
+
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/repositories"
 
 	"gorm.io/gorm"
 )
 
 type RoleService struct {
-	db      *gorm.DB
+	repo    *repositories.RoleRepository
 	permInv PermissionCacheInvalidator
 }
 
@@ -33,15 +35,8 @@ type UpdateRoleMenusRequest struct {
 	MenuIDs []uint `json:"menu_ids" binding:"required"`
 }
 
-func NewRoleService(db *gorm.DB) *RoleService {
-	return &RoleService{
-		db: db,
-	}
-}
-
-// SetPermissionCacheInvalidator wires RBAC permission cache invalidation (optional).
-func (s *RoleService) SetPermissionCacheInvalidator(p PermissionCacheInvalidator) {
-	s.permInv = p
+func NewRoleService(repo *repositories.RoleRepository, permInv PermissionCacheInvalidator) *RoleService {
+	return &RoleService{repo: repo, permInv: permInv}
 }
 
 func (s *RoleService) invalidateAllPermissions(ctx context.Context) {
@@ -51,58 +46,32 @@ func (s *RoleService) invalidateAllPermissions(ctx context.Context) {
 }
 
 func (s *RoleService) List(ctx context.Context, pagination *models.Pagination) ([]models.Role, error) {
-	var roles []models.Role
-	var total int64
-
-	query := s.db.WithContext(ctx).Model(&models.Role{}).Preload("Menus")
-
-	// Count total
-	if err := query.Count(&total).Error; err != nil {
-		return nil, err
-	}
-
-	// Apply pagination
-	if pagination != nil {
-		offset := (pagination.Page - 1) * pagination.PageSize
-		query = query.Offset(offset).Limit(pagination.PageSize)
-		pagination.Total = total
-	}
-
-	err := query.Find(&roles).Error
-	return roles, err
+	return s.repo.ListWithMenus(ctx, pagination)
 }
 
 func (s *RoleService) Create(ctx context.Context, req *CreateRoleRequest) (*models.Role, error) {
 	var result *models.Role
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		role := &models.Role{
 			Name:        req.Name,
 			Code:        req.Code,
 			Description: req.Description,
 			Status:      req.Status,
 		}
-
-		// Create role
 		if err := tx.Create(role).Error; err != nil {
 			return err
 		}
-
-		// Assign menus
 		if len(req.MenuIDs) > 0 {
-			if err := s.assignMenus(tx, role.ID, req.MenuIDs); err != nil {
+			if err := s.repo.ReplaceMenus(tx, role.ID, req.MenuIDs); err != nil {
 				return err
 			}
 		}
-
-		// Load menus
 		if err := tx.Preload("Menus").First(role, role.ID).Error; err != nil {
 			return err
 		}
-
 		result = role
 		return nil
 	})
-
 	if err == nil {
 		s.invalidateAllPermissions(ctx)
 	}
@@ -110,23 +79,16 @@ func (s *RoleService) Create(ctx context.Context, req *CreateRoleRequest) (*mode
 }
 
 func (s *RoleService) GetByID(ctx context.Context, id uint) (*models.Role, error) {
-	var role models.Role
-	err := s.db.WithContext(ctx).Preload("Menus").First(&role, id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &role, nil
+	return s.repo.FindByIDWithMenus(ctx, id)
 }
 
 func (s *RoleService) Update(ctx context.Context, id uint, req *UpdateRoleRequest) (*models.Role, error) {
 	var result *models.Role
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role models.Role
 		if err := tx.First(&role, id).Error; err != nil {
 			return err
 		}
-
-		// Update basic fields
 		if req.Name != "" {
 			role.Name = req.Name
 		}
@@ -139,27 +101,20 @@ func (s *RoleService) Update(ctx context.Context, id uint, req *UpdateRoleReques
 		if req.Status != 0 {
 			role.Status = req.Status
 		}
-
 		if err := tx.Save(&role).Error; err != nil {
 			return err
 		}
-
-		// Update menu associations if provided
 		if req.MenuIDs != nil {
-			if err := s.assignMenus(tx, role.ID, req.MenuIDs); err != nil {
+			if err := s.repo.ReplaceMenus(tx, role.ID, req.MenuIDs); err != nil {
 				return err
 			}
 		}
-
-		// Reload with menus
 		if err := tx.Preload("Menus").First(&role, role.ID).Error; err != nil {
 			return err
 		}
-
 		result = &role
 		return nil
 	})
-
 	if err == nil && req.MenuIDs != nil {
 		s.invalidateAllPermissions(ctx)
 	}
@@ -167,79 +122,42 @@ func (s *RoleService) Update(ctx context.Context, id uint, req *UpdateRoleReques
 }
 
 func (s *RoleService) Delete(ctx context.Context, id uint) error {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 检查是否是超级管理员角色
+	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role models.Role
 		if err := tx.First(&role, id).Error; err != nil {
 			return err
 		}
-
 		if role.Code == "admin" {
-			return errors.New("cannot delete admin role")
+			return repositories.ErrAdminRoleProtected
 		}
-
-		// Remove role-menu associations
-		if err := tx.Where("role_id = ?", id).Delete(&models.RoleMenu{}).Error; err != nil {
+		if err := s.repo.DeleteRoleMenus(tx, id); err != nil {
 			return err
 		}
-
-		// Remove user-role associations
-		if err := tx.Exec("DELETE FROM user_roles WHERE role_id = ?", id).Error; err != nil {
+		if err := s.repo.DeleteUserRolesByRoleID(tx, id); err != nil {
 			return err
 		}
-
-		// Delete role
 		return tx.Delete(&models.Role{}, id).Error
 	})
 	if err == nil {
 		s.invalidateAllPermissions(ctx)
 	}
+	if errors.Is(err, repositories.ErrAdminRoleProtected) {
+		return err
+	}
 	return err
 }
 
-// assignMenus assigns menus to a role
-func (s *RoleService) assignMenus(tx *gorm.DB, roleID uint, menuIDs []uint) error {
-	// Remove existing associations
-	if err := tx.Where("role_id = ?", roleID).Delete(&models.RoleMenu{}).Error; err != nil {
-		return err
-	}
-
-	// Add new associations
-	if len(menuIDs) > 0 {
-		var roleMenus []models.RoleMenu
-		for _, menuID := range menuIDs {
-			roleMenus = append(roleMenus, models.RoleMenu{
-				RoleID: roleID,
-				MenuID: menuID,
-			})
-		}
-		return tx.Create(&roleMenus).Error
-	}
-
-	return nil
-}
-
-// GetMenus returns all menus for a role
 func (s *RoleService) GetMenus(ctx context.Context, roleID uint) ([]models.Menu, error) {
-	var menus []models.Menu
-	err := s.db.WithContext(ctx).
-		Joins("JOIN role_menus ON menus.id = role_menus.menu_id").
-		Where("role_menus.role_id = ? AND menus.status = 1", roleID).
-		Find(&menus).Error
-	return menus, err
+	return s.repo.ListMenusByRoleID(ctx, roleID)
 }
 
-// UpdateMenus updates the menus of a role
 func (s *RoleService) UpdateMenus(ctx context.Context, roleID uint, req *UpdateRoleMenusRequest) error {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Check if role exists
+	err := s.repo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var role models.Role
 		if err := tx.First(&role, roleID).Error; err != nil {
 			return err
 		}
-
-		// Update menu associations
-		return s.assignMenus(tx, roleID, req.MenuIDs)
+		return s.repo.ReplaceMenus(tx, roleID, req.MenuIDs)
 	})
 	if err == nil {
 		s.invalidateAllPermissions(ctx)

@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"app/pkg/response"
+	"go-admin-scaffold/pkg/response"
 	"time"
 
 	"github.com/gin-gonic/gin"

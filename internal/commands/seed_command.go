@@ -4,10 +4,10 @@ import (
 	"context"
 	"flag"
 
-	"app/internal/database/seeder"
-	"app/internal/database/seeders"
-	"app/pkg/console"
-	"app/pkg/database"
+	"go-admin-scaffold/internal/database/seeder"
+	"go-admin-scaffold/internal/database/seeders"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
 )
 
 type SeedCommand struct {
@@ -27,7 +27,10 @@ func (c *SeedCommand) Configure(config *console.CommandConfig) {
 }
 
 func (c *SeedCommand) Handle(ctx context.Context) error {
-	db := database.GetDB()
+	db, err := database.FromContext(ctx)
+	if err != nil {
+		return err
+	}
 	seederManager := seeder.NewSeederManager(db)
 
 	// Set the global manager for seeders to register themselves

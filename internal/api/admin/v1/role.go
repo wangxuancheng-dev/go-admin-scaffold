@@ -3,73 +3,57 @@ package v1
 import (
 	"strconv"
 
-	"app/internal/core/models"
-	"app/internal/core/services"
-	"app/pkg/ginext"
-	"app/pkg/response"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/services"
+	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// ListRoles handles the request to list roles
-func ListRoles(c *gin.Context) {
-	// Parse pagination parameters
+// RoleHandler handles role management endpoints.
+type RoleHandler struct {
+	roles *services.RoleService
+	menus *services.MenuService
+}
+
+func NewRoleHandler(roles *services.RoleService, menus *services.MenuService) *RoleHandler {
+	return &RoleHandler{roles: roles, menus: menus}
+}
+
+func (h *RoleHandler) ListRoles(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-
-	pagination := &models.Pagination{
-		Page:     page,
-		PageSize: pageSize,
-	}
-
-	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
-	if !ok {
-		return
-	}
-	roles, err := roleSvc.List(c.Request.Context(), pagination)
+	pagination := &models.Pagination{Page: page, PageSize: pageSize}
+	roles, err := h.roles.List(c.Request.Context(), pagination)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to fetch roles")
 		return
 	}
-
 	response.PageSuccess(c, roles, pagination.Total, pagination.Page, pagination.PageSize)
 }
 
-// CreateRole handles the request to create a new role
-func CreateRole(c *gin.Context) {
+func (h *RoleHandler) CreateRole(c *gin.Context) {
 	var req services.CreateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, err.Error())
 		return
 	}
-
-	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
-	if !ok {
-		return
-	}
-	role, err := roleSvc.Create(c.Request.Context(), &req)
+	role, err := h.roles.Create(c.Request.Context(), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to create role")
 		return
 	}
-
 	response.Success(c, role)
 }
 
-// GetRole handles the request to get a role by ID
-func GetRole(c *gin.Context) {
+func (h *RoleHandler) GetRole(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		response.ParamError(c, "invalid role ID")
 		return
 	}
-
-	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
-	if !ok {
-		return
-	}
-	role, err := roleSvc.GetByID(c.Request.Context(), uint(id))
+	role, err := h.roles.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			response.NotFoundError(c)
@@ -78,54 +62,38 @@ func GetRole(c *gin.Context) {
 		response.Error(c, response.CodeServerError, "failed to fetch role")
 		return
 	}
-
 	response.Success(c, role)
 }
 
-// UpdateRole handles the request to update a role
-func UpdateRole(c *gin.Context) {
+func (h *RoleHandler) UpdateRole(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		response.ParamError(c, "invalid role ID")
 		return
 	}
-
 	var req services.UpdateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, err.Error())
 		return
 	}
-
-	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
-	if !ok {
-		return
-	}
-	role, err := roleSvc.Update(c.Request.Context(), uint(id), &req)
+	role, err := h.roles.Update(c.Request.Context(), uint(id), &req)
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to update role")
 		return
 	}
-
 	response.Success(c, role)
 }
 
-// DeleteRole handles the request to delete a role
-func DeleteRole(c *gin.Context) {
+func (h *RoleHandler) DeleteRole(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		response.ParamError(c, "invalid role ID")
 		return
 	}
-
-	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
-	if !ok {
-		return
-	}
-	if err := roleSvc.Delete(c.Request.Context(), uint(id)); err != nil {
+	if err := h.roles.Delete(c.Request.Context(), uint(id)); err != nil {
 		response.Error(c, response.CodeServerError, "failed to delete role")
 		return
 	}
-
 	response.Success(c, nil)
 }
 
@@ -147,69 +115,41 @@ type MenuTreeNode struct {
 	Children []MenuTreeNode `json:"children,omitempty"`
 }
 
-// GetRoleMenus handles the request to get menus of a role
-func GetRoleMenus(c *gin.Context) {
+func (h *RoleHandler) GetRoleMenus(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		response.ParamError(c, "invalid role ID")
 		return
 	}
-
-	menuSvc, okMenu := ginext.GetService[*services.MenuService](c, "menuService")
-	if !okMenu {
-		return
-	}
-	roleSvc, okRole := ginext.GetService[*services.RoleService](c, "roleService")
-	if !okRole {
-		return
-	}
-
-	// Get all menus
-	allMenus, err := menuSvc.GetAll(c.Request.Context())
+	allMenus, err := h.menus.GetAll(c.Request.Context())
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to get menus")
 		return
 	}
-
-	// Get role's menus
-	roleMenus, err := roleSvc.GetMenus(c.Request.Context(), uint(id))
+	roleMenus, err := h.roles.GetMenus(c.Request.Context(), uint(id))
 	if err != nil {
 		response.Error(c, response.CodeServerError, "failed to get role menus")
 		return
 	}
-
-	// Create a map for quick lookup of assigned menus
 	assignedMap := make(map[uint]bool)
 	for _, menu := range roleMenus {
 		assignedMap[menu.ID] = true
 	}
-
-	// Build menu tree
-	var result RoleMenuResponse
-	result.MenuTree = buildMenuTree(allMenus, assignedMap, nil)
-
-	response.Success(c, result)
+	response.Success(c, RoleMenuResponse{MenuTree: buildMenuTree(allMenus, assignedMap, nil)})
 }
 
-// UpdateRoleMenus handles the request to update menus of a role
-func UpdateRoleMenus(c *gin.Context) {
+func (h *RoleHandler) UpdateRoleMenus(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		response.ParamError(c, "invalid role ID")
 		return
 	}
-
 	var req services.UpdateRoleMenusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, err.Error())
 		return
 	}
-
-	roleSvc, ok := ginext.GetService[*services.RoleService](c, "roleService")
-	if !ok {
-		return
-	}
-	if err := roleSvc.UpdateMenus(c.Request.Context(), uint(id), &req); err != nil {
+	if err := h.roles.UpdateMenus(c.Request.Context(), uint(id), &req); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			response.NotFoundError(c)
 			return
@@ -217,21 +157,15 @@ func UpdateRoleMenus(c *gin.Context) {
 		response.Error(c, response.CodeServerError, "failed to update role menus: "+err.Error())
 		return
 	}
-
 	response.Success(c, nil)
 }
 
-// Helper function to build menu tree
 func buildMenuTree(allMenus []models.Menu, assignedMap map[uint]bool, parentID *uint) []MenuTreeNode {
 	var nodes []MenuTreeNode
-
 	for _, menu := range allMenus {
-		// Skip disabled menus
 		if menu.Status != 1 {
 			continue
 		}
-
-		// Check if this menu belongs to the current parent level
 		if (parentID == nil && menu.ParentID == nil) || (parentID != nil && menu.ParentID != nil && *menu.ParentID == *parentID) {
 			node := MenuTreeNode{
 				ID:       menu.ID,
@@ -247,6 +181,5 @@ func buildMenuTree(allMenus []models.Menu, assignedMap map[uint]bool, parentID *
 			nodes = append(nodes, node)
 		}
 	}
-
 	return nodes
 }

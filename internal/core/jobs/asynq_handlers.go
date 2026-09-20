@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"app/pkg/queue"
+	"go-admin-scaffold/pkg/queue"
 
 	"github.com/hibiken/asynq"
 )

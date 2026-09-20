@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"app/internal/config"
-	"app/internal/core/jobs"
-	"app/pkg/queue"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/core/jobs"
+	"go-admin-scaffold/pkg/queue"
 
 	"github.com/hibiken/asynq"
 )

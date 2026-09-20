@@ -3,10 +3,10 @@ package repositories
 import (
 	"context"
 
-	"app/internal/config"
-	"app/internal/core/models"
-	"app/internal/core/types"
-	"app/pkg/logger"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/core/models"
+	"go-admin-scaffold/internal/core/types"
+	"go-admin-scaffold/pkg/logger"
 
 	"gorm.io/gorm"
 )

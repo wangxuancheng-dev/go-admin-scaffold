@@ -1,71 +1,76 @@
 package handlers
 
 import (
-	"app/internal/core/services"
-	"app/internal/core/sse"
-	"app/pkg/ginext"
-	"app/pkg/response"
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
+
+	"go-admin-scaffold/internal/core/services"
+	"go-admin-scaffold/internal/core/sse"
+	"go-admin-scaffold/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
 
+// SSEHandler handles Server-Sent Events.
+//
+// Auth strategy mirrors WebSocket:
+//   - GET /sse requires query `token` (JWT); identity comes from claims.
+//   - Optional `user_id` must match username or numeric user id when provided.
+//   - Mutating endpoints require Authorization Bearer via JWT middleware.
 type SSEHandler struct {
 	manager *sse.Manager
+	auth    *services.AuthService
 }
 
-func NewSSEHandler() *SSEHandler {
+func NewSSEHandler(auth *services.AuthService) *SSEHandler {
 	manager := sse.NewManager()
-	go manager.Start() // Start the SSE manager
-	return &SSEHandler{manager: manager}
+	go manager.Start()
+	return &SSEHandler{manager: manager, auth: auth}
 }
 
-// HandleSSE handles SSE connections
 func (h *SSEHandler) HandleSSE(c *gin.Context) {
-	userID := c.Query("user_id")
 	token := c.Query("token")
-
-	if userID == "" {
-		response.ParamError(c, "user_id is required")
-		return
-	}
-
 	if token == "" {
 		response.ParamError(c, "token is required")
 		return
 	}
-
-	authSvc, ok := ginext.GetService[*services.AuthService](c, "authService")
-	if !ok {
+	if h.auth == nil {
+		response.ServerError(c)
 		return
 	}
-	claims, err := authSvc.ValidateToken(token)
+
+	claims, err := h.auth.ValidateToken(token)
 	if err != nil {
 		response.UnauthorizedError(c)
 		return
 	}
-
-	// Verify that the token's user_id matches the provided userID
-	tokenUserID, ok := claims["username"]
-	if !ok || tokenUserID != userID {
+	user, err := h.auth.GetUserFromClaims(c.Request.Context(), claims)
+	if err != nil || user == nil {
 		response.UnauthorizedError(c)
 		return
 	}
 
-	// Set headers for SSE
+	if q := c.Query("user_id"); q != "" && q != user.Username && q != strconv.FormatUint(uint64(user.ID), 10) {
+		response.UnauthorizedError(c)
+		return
+	}
+
+	userID := user.Username
+	if userID == "" {
+		userID = fmt.Sprintf("%d", user.ID)
+	}
+
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("Transfer-Encoding", "chunked")
 
-	// Register client
 	client := h.manager.Register(userID)
 	defer h.manager.Unregister(client)
 
-	// Send welcome message
 	welcomeEvent := &sse.Event{
 		Type: sse.EventTypeNotification,
 		Data: fmt.Sprintf("Welcome %s!", userID),
@@ -73,34 +78,26 @@ func (h *SSEHandler) HandleSSE(c *gin.Context) {
 	}
 	h.manager.SendEvent(welcomeEvent)
 
-	// Create channel for client disconnect
 	clientGone := c.Writer.CloseNotify()
-
-	// Start event loop
 	for {
 		select {
 		case <-clientGone:
 			log.Printf("Client %s disconnected from SSE", userID)
 			return
-
 		case event := <-client.Messages:
-			// Convert event to JSON
 			data, err := json.Marshal(event)
 			if err != nil {
 				log.Printf("Error marshaling event: %v", err)
 				continue
 			}
-
-			// Write event to response
-			c.Writer.Write([]byte(fmt.Sprintf("id: %s\n", event.ID)))
-			c.Writer.Write([]byte(fmt.Sprintf("event: %s\n", event.Type)))
-			c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", string(data))))
+			_, _ = c.Writer.Write([]byte(fmt.Sprintf("id: %s\n", event.ID)))
+			_, _ = c.Writer.Write([]byte(fmt.Sprintf("event: %s\n", event.Type)))
+			_, _ = c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", string(data))))
 			c.Writer.Flush()
 		}
 	}
 }
 
-// SendNotification sends a notification to specific user(s) or broadcasts it
 func (h *SSEHandler) SendNotification(c *gin.Context) {
 	var req struct {
 		Type    string      `json:"type" binding:"required"`
@@ -108,12 +105,10 @@ func (h *SSEHandler) SendNotification(c *gin.Context) {
 		UserID  string      `json:"user_id"`
 		GroupID string      `json:"group_id"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.ValidationError(c, err.Error())
 		return
 	}
-
 	if req.UserID != "" {
 		h.manager.SendToUser(req.UserID, req.Type, req.Data)
 	} else if req.GroupID != "" {
@@ -121,34 +116,27 @@ func (h *SSEHandler) SendNotification(c *gin.Context) {
 	} else {
 		h.manager.Broadcast(req.Type, req.Data)
 	}
-
 	response.Success(c, gin.H{"message": "Notification sent successfully"})
 }
 
-// JoinGroup adds a user to an SSE group
 func (h *SSEHandler) JoinGroup(c *gin.Context) {
 	userID := c.Query("user_id")
 	groupID := c.Query("group_id")
-
 	if userID == "" || groupID == "" {
 		response.ParamError(c, "user_id and group_id are required")
 		return
 	}
-
 	h.manager.JoinGroup(groupID, userID)
 	response.Success(c, gin.H{"message": "Successfully joined group"})
 }
 
-// LeaveGroup removes a user from an SSE group
 func (h *SSEHandler) LeaveGroup(c *gin.Context) {
 	userID := c.Query("user_id")
 	groupID := c.Query("group_id")
-
 	if userID == "" || groupID == "" {
 		response.ParamError(c, "user_id and group_id are required")
 		return
 	}
-
 	h.manager.LeaveGroup(groupID, userID)
 	response.Success(c, gin.H{"message": "Successfully left group"})
 }

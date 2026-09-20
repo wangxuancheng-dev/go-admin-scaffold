@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"app/pkg/i18n"
+	"go-admin-scaffold/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
 )

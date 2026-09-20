@@ -3,9 +3,9 @@ package commands
 import (
 	"context"
 
-	"app/internal/database/migrations"
-	"app/pkg/console"
-	"app/pkg/database"
+	"go-admin-scaffold/internal/database/migrations"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/database"
 )
 
 type MigrateCommand struct {
@@ -13,10 +13,9 @@ type MigrateCommand struct {
 }
 
 func NewMigrateCommand() *MigrateCommand {
-	cmd := &MigrateCommand{
+	return &MigrateCommand{
 		BaseCommand: console.NewCommand("migrate", "Run database migrations"),
 	}
-	return cmd
 }
 
 func (c *MigrateCommand) Configure(config *console.CommandConfig) {
@@ -25,7 +24,10 @@ func (c *MigrateCommand) Configure(config *console.CommandConfig) {
 }
 
 func (c *MigrateCommand) Handle(ctx context.Context) error {
-	db := database.GetDB()
+	db, err := database.FromContext(ctx)
+	if err != nil {
+		return err
+	}
 	migrator := migrations.InitMigrations(db)
 	return migrator.RunPending()
 }

@@ -21,7 +21,7 @@
 
 1. 在 `init` 中 **`queue.RegisterJobType("name", func() queue.JobInterface { return &YourJob{} })`**。
 2. **`Manager.Push` / `Later`** 会为已注册的具体类型自动填入 **`BaseJob.JobType`**（与 Asynq 任务类型字符串一致）；也可手动设置 `JobType`。
-3. 消费端必须在同一进程注册 **Asynq 处理器**：**`jobs.RegisterAsynqHandlers(mux)`**（见 `internal/core/jobs/asynq_handlers.go`）。业务侧需 **`import _ "app/internal/core/jobs"`** 或显式 import 含 `RegisterJobType` 的包，保证类型注册与 handler 一致。
+3. 消费端必须在同一进程注册 **Asynq 处理器**：**`jobs.RegisterAsynqHandlers(mux)`**（见 `internal/core/jobs/asynq_handlers.go`）。业务侧需 **`import _ "go-admin-scaffold/internal/core/jobs"`** 或显式 import 含 `RegisterJobType` 的包，保证类型注册与 handler 一致。
 4. 入队 payload 为 **整段任务 JSON**；Asynq 的 *task type* = `job_type` 字段。
 
 ### 与 `Pop` 的关系

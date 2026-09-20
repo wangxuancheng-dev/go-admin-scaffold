@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"app/internal/core/storage"
-	"app/pkg/response"
+	"go-admin-scaffold/internal/core/storage"
+	"go-admin-scaffold/pkg/response"
 	"fmt"
 	"path/filepath"
 	"strings"

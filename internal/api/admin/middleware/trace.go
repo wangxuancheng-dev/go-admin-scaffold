@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"app/pkg/logger"
+	"go-admin-scaffold/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

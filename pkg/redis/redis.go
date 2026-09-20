@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -20,32 +21,37 @@ type Config struct {
 	DB       int    `yaml:"db"`
 }
 
-// Setup initializes the Redis client
-func Setup(cfg *Config) error {
-	var err error
+// Setup initializes the Redis client and returns it. Safe to call once per process.
+func Setup(cfg *Config) (*redis.Client, error) {
+	var setupErr error
 	once.Do(func() {
-		client = redis.NewClient(&redis.Options{
+		if cfg == nil {
+			setupErr = fmt.Errorf("redis config is required")
+			return
+		}
+		c := redis.NewClient(&redis.Options{
 			Addr:     cfg.Host + ":" + cfg.Port,
 			Password: cfg.Password,
 			DB:       cfg.DB,
 		})
-
-		// Test connection
-		err = client.Ping(context.Background()).Err()
+		if err := c.Ping(context.Background()).Err(); err != nil {
+			_ = c.Close()
+			setupErr = err
+			return
+		}
+		client = c
 	})
-	return err
+	if setupErr != nil {
+		return nil, setupErr
+	}
+	if client == nil {
+		return nil, fmt.Errorf("redis client not initialized")
+	}
+	return client, nil
 }
 
-// GetClient returns the Redis client instance
+// GetClient returns the Redis client instance, or nil if Setup was not called.
 func GetClient() *redis.Client {
-	if client == nil {
-		// If client is not initialized, create a default one
-		client = redis.NewClient(&redis.Options{
-			Addr:     "localhost:6379",
-			Password: "", // no password set
-			DB:       0,  // use default DB
-		})
-	}
 	return client
 }
 

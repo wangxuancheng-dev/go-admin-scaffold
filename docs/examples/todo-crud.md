@@ -437,24 +437,25 @@ func DeleteTodo(c *gin.Context) {
 // Todo routes
 todos := adminV1Protected.Group("/todos")
 {
-	todos.GET("", middleware.RBAC("todo:view"), wrapHandler(adminv1.ListTodos))
-	todos.POST("", middleware.RBAC("todo:create"), wrapHandler(adminv1.CreateTodo))
-	todos.GET("/:id", middleware.RBAC("todo:view"), wrapHandler(adminv1.GetTodo))
-	todos.PUT("/:id", middleware.RBAC("todo:edit"), wrapHandler(adminv1.UpdateTodo))
-	todos.DELETE("/:id", middleware.RBAC("todo:delete"), wrapHandler(adminv1.DeleteTodo))
+	todos.GET("", rbac("todo:view"), wrapHandler(api.Todos.ListTodos))
+	todos.POST("", rbac("todo:create"), wrapHandler(api.Todos.CreateTodo))
+	todos.GET("/:id", rbac("todo:view"), wrapHandler(api.Todos.GetTodo))
+	todos.PUT("/:id", rbac("todo:edit"), wrapHandler(api.Todos.UpdateTodo))
+	todos.DELETE("/:id", rbac("todo:delete"), wrapHandler(api.Todos.DeleteTodo))
 }
 ```
 
 ## 7. 注册服务
 
-需要在服务注入中间件中添加 TodoService。在 `internal/api/admin/middleware/service_injection.go` 中添加：
+在组合根 `internal/bootstrap/container.go` 中组装 Todo（脚手架已默认包含）：
 
 ```go
-// 在 ServiceInjection 函数中添加
 todoRepo := repositories.NewTodoRepository(db)
-todoService := services.NewTodoService(todoRepo)
-c.Set("todoService", todoService)
+todoSvc := services.NewTodoService(todoRepo)
+// 放入 Container，再由 adminv1.NewAdminAPI(c) 构造 TodoHandler
 ```
+
+路由侧使用构造注入的 handler，例如 `api.Todos.ListTodos`，不再经 gin.Context 按请求新建 Service。
 
 ## 8. API 使用示例
 

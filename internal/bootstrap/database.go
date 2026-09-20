@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"time"
 
-	"app/internal/config"
-	"app/pkg/database"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/pkg/database"
+
+	"gorm.io/gorm"
 )
 
-// SetupDatabase initializes the database connection (MySQL or PostgreSQL per cfg.Database.Driver).
-func SetupDatabase(cfg *config.Config) error {
+// SetupDatabase initializes the database connection and registers the global handle for CLI tools.
+// Prefer using the returned *gorm.DB in the HTTP composition root.
+func SetupDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db, err := database.OpenGorm(database.GormOpenConfig{
 		Driver:   cfg.Database.Driver,
 		Host:     cfg.Database.Host,
@@ -22,12 +25,12 @@ func SetupDatabase(cfg *config.Config) error {
 		TimeZone: cfg.Database.TimeZone,
 	})
 	if err != nil {
-		return fmt.Errorf("open database: %w", err)
+		return nil, fmt.Errorf("open database: %w", err)
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	sqlDB.SetMaxIdleConns(cfg.Database.MaxIdleConns)
@@ -35,6 +38,5 @@ func SetupDatabase(cfg *config.Config) error {
 	sqlDB.SetConnMaxLifetime(time.Duration(cfg.Database.ConnMaxLifetime) * time.Second)
 
 	database.Init(db)
-
-	return nil
+	return db, nil
 }

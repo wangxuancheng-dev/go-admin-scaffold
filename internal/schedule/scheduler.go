@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"app/pkg/console"
-	"app/pkg/locker"
-	"app/pkg/logger"
+	"go-admin-scaffold/pkg/console"
+	"go-admin-scaffold/pkg/locker"
+	"go-admin-scaffold/pkg/logger"
 
 	"github.com/robfig/cron/v3"
 )

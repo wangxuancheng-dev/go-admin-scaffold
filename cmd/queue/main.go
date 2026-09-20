@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"app/internal/config"
-	"app/internal/core/services"
+	"go-admin-scaffold/internal/config"
+	"go-admin-scaffold/internal/core/services"
 )
 
 var (
